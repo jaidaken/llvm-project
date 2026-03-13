@@ -832,18 +832,8 @@ X86TargetLowering::X86TargetLowering(const X86TargetMachine &TM,
     setOperationAction(ISD::UNDEF,     MVT::f80, Expand);
     setOperationAction(ISD::FCOPYSIGN, MVT::f80, Expand);
     {
-      APFloat TmpFlt = APFloat::getZero(APFloat::x87DoubleExtended());
-      addLegalFPImmediate(TmpFlt);  // FLD0
-      TmpFlt.changeSign();
-      addLegalFPImmediate(TmpFlt);  // FLD0/FCHS
-
-      bool ignored;
-      APFloat TmpFlt2(+1.0);
-      TmpFlt2.convert(APFloat::x87DoubleExtended(), APFloat::rmNearestTiesToEven,
-                      &ignored);
-      addLegalFPImmediate(TmpFlt2);  // FLD1
-      TmpFlt2.changeSign();
-      addLegalFPImmediate(TmpFlt2);  // FLD1/FCHS
+      // bw1-decomp: Do NOT register x87 FP immediates as legal for f80.
+      // This forces fld [mem] instead of fldz/fld1, matching MSVC output.
     }
 
     // Always expand sin/cos functions even though x87 has an instruction.

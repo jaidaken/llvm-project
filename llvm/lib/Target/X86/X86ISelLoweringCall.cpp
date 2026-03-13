@@ -769,8 +769,17 @@ X86TargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
     // Promote values to the appropriate types.
     if (VA.getLocInfo() == CCValAssign::SExt)
       ValToCopy = DAG.getNode(ISD::SIGN_EXTEND, dl, VA.getLocVT(), ValToCopy);
-    else if (VA.getLocInfo() == CCValAssign::ZExt)
-      ValToCopy = DAG.getNode(ISD::ZERO_EXTEND, dl, VA.getLocVT(), ValToCopy);
+    else if (VA.getLocInfo() == CCValAssign::ZExt) {
+      // bw1-decomp: When NoBoolMask is set, use ANY_EXTEND instead of
+      // ZERO_EXTEND for i1->i8 returns. This suppresses the "and al, 1"
+      // instruction that LLVM normally inserts for bool returns, matching
+      // MSVC 6.0 behavior which does not mask bool return values.
+      if (MF.getFunction().hasFnAttribute(Attribute::NoBoolMask) &&
+          ValVT == MVT::i1)
+        ValToCopy = DAG.getNode(ISD::ANY_EXTEND, dl, VA.getLocVT(), ValToCopy);
+      else
+        ValToCopy = DAG.getNode(ISD::ZERO_EXTEND, dl, VA.getLocVT(), ValToCopy);
+    }
     else if (VA.getLocInfo() == CCValAssign::AExt) {
       if (ValVT.isVector() && ValVT.getVectorElementType() == MVT::i1)
         ValToCopy = lowerMasksToReg(ValToCopy, VA.getLocVT(), dl, DAG);

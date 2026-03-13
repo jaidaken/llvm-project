@@ -3639,6 +3639,7 @@ def AnyX86NoCallerSavedRegisters : InheritableAttr,
   let SimpleHandler = 1;
 }
 
+
 def AnyX86NoCfCheck : DeclOrTypeAttr, TargetSpecificAttr<TargetAnyX86>{
   let Spellings = [GCC<"nocf_check">];
   let Subjects = SubjectList<[FunctionLike]>;
@@ -4949,6 +4950,20 @@ def MOV32rr_REV: InheritableAttr {
 
 def XOR32rr_REV: InheritableAttr {
   let Spellings = [GNU<"XOR32rr_REV">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def NoBoolMask: InheritableAttr {
+  let Spellings = [GNU<"no_bool_mask">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def ExpandMovzx: InheritableAttr {
+  let Spellings = [GNU<"expand_movzx">];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
   let SimpleHandler = 1;

@@ -121,6 +121,10 @@ FunctionPass *createX86WinEHStatePass();
 /// the MachineInstr to MC.
 FunctionPass *createX86ExpandPseudoPass();
 
+/// Return a Machine IR pass that expands MOVZX32rm8/MOVZX32rm16 into
+/// XOR32rr_REV + MOV8rm/MOV16rm for functions with the expand_movzx attribute.
+FunctionPass *createX86ExpandMovzxPass();
+
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();
 

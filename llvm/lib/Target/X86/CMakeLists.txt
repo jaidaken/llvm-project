@@ -40,6 +40,7 @@ set(sources
   X86FastTileConfig.cpp
   X86PreTileConfig.cpp
   X86ExpandPseudo.cpp
+  X86ExpandMovzx.cpp
   X86FastISel.cpp
   X86FixupBWInsts.cpp
   X86FixupLEAs.cpp

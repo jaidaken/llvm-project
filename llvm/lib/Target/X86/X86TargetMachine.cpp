@@ -608,6 +608,7 @@ void X86PassConfig::addPreEmitPass() {
     addPass(createX86FixupVectorConstants());
   }
   addPass(createX86CompressEVEXPass());
+  addPass(createX86ExpandMovzxPass());
   addPass(createX86DiscriminateMemOpsPass());
   addPass(createX86InsertPrefetchPass());
   addPass(createX86InsertX87waitPass());

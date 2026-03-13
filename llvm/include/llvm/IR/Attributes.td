@@ -470,3 +470,9 @@ def : MergeRule<"setAND<MustProgressAttr>">;
 /// Use alternative MOV and XOR instruction opcode.
 def MOV32rr_REV : EnumAttr<"MOV32rr_REV", IntersectPreserve, [FnAttr]>;
 def XOR32rr_REV : EnumAttr<"XOR32rr_REV", IntersectPreserve, [FnAttr]>;
+
+/// Suppress "and al, 1" masking for bool (i1) return values.
+def NoBoolMask : EnumAttr<"NoBoolMask", IntersectPreserve, [FnAttr]>;
+
+/// Expand MOVZX32rm8 to XOR32rr + MOV8rm sequence.
+def ExpandMovzx : EnumAttr<"ExpandMovzx", IntersectPreserve, [FnAttr]>;

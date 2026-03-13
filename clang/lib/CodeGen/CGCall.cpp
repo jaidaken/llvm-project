@@ -2393,6 +2393,10 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::MOV32rr_REV);
     if (TargetDecl->hasAttr<XOR32rr_REVAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::XOR32rr_REV);
+    if (TargetDecl->hasAttr<NoBoolMaskAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::NoBoolMask);
+    if (TargetDecl->hasAttr<ExpandMovzxAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::ExpandMovzx);
 
     if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
       AddAttributesFromFunctionProtoType(
