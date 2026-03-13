@@ -10,12 +10,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, windows]
+        os: [ubuntu]
     runs-on: ${{ matrix.os }}-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: llvm/actions/setup-windows@a1ea791b03c8e61f53a0e66f2f73db283aa0f01e
-        if: ${{ runner.os == 'Windows' }}
       - name: Install Ninja
         uses: llvm/actions/install-ninja@a1ea791b03c8e61f53a0e66f2f73db283aa0f01e
       - name: Configure llvm cmake
@@ -67,19 +65,12 @@ jobs:
         with:
           name: llvm-ubuntu
           path: llvm-ubuntu
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: llvm-windows
-          path: llvm-windows
       - name: Create release zips
         run: |
           cd llvm-ubuntu && zip -r ../llvm-ubuntu.zip . && cd ..
-          cd llvm-windows && zip -r ../llvm-windows.zip . && cd ..
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             llvm-ubuntu.zip
-            llvm-windows.zip
           generate_release_notes: true
