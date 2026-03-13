@@ -141,6 +141,18 @@ FunctionPass *createX86SuppressFPImmPass();
 /// OR32ri8 reg, -1 for functions with the prefer_or_minus_one attribute.
 FunctionPass *createX86OrMinusOnePass();
 
+/// Return a Machine IR pass that prevents folding of (~byte >> N) & 1 into
+/// test+sete for functions with the no_test_sete_fold attribute.
+FunctionPass *createX86NoTestSeteFoldPass();
+
+/// Return a Machine IR pass that converts boolean NOT to neg+sbb+inc
+/// for functions with the prefer_neg_sbb attribute.
+FunctionPass *createX86PreferNegSbbPass();
+
+/// Return a Machine IR pass that routes sete through ECX instead of AL
+/// for functions with the prefer_sete_ecx attribute.
+FunctionPass *createX86PreferSeteEcxPass();
+
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();
 

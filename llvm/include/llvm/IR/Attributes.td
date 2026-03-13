@@ -488,3 +488,12 @@ def PreferIncDecByte : EnumAttr<"PreferIncDecByte", IntersectPreserve, [FnAttr]>
 
 /// Convert MOV32ri reg, 0xFFFFFFFF to OR32ri8 reg, -1.
 def PreferOrMinusOne : EnumAttr<"PreferOrMinusOne", IntersectPreserve, [FnAttr]>;
+
+/// Prevent folding (~byte >> N) & 1 into test+sete.
+def NoTestSeteFold : EnumAttr<"NoTestSeteFold", IntersectPreserve, [FnAttr]>;
+
+/// Generate neg+sbb+inc for boolean NOT instead of xor+test+sete.
+def PreferNegSbb : EnumAttr<"PreferNegSbb", IntersectPreserve, [FnAttr]>;
+
+/// Route sete through ECX (sete cl; movzx eax, cl) instead of sete al.
+def PreferSeteEcx : EnumAttr<"PreferSeteEcx", IntersectPreserve, [FnAttr]>;

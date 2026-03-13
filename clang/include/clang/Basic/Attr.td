@@ -4996,3 +4996,31 @@ def PreferOrMinusOne: InheritableAttr {
   let Documentation = [Undocumented];
   let SimpleHandler = 1;
 }
+
+def TrailingBytes: InheritableAttr {
+  let Spellings = [GNU<"trailing_bytes">];
+  let Args = [StringArgument<"Bytes">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+}
+
+def NoTestSeteFold: InheritableAttr {
+  let Spellings = [GNU<"no_test_sete_fold">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferNegSbb: InheritableAttr {
+  let Spellings = [GNU<"prefer_neg_sbb">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferSeteEcx: InheritableAttr {
+  let Spellings = [GNU<"prefer_sete_ecx">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}

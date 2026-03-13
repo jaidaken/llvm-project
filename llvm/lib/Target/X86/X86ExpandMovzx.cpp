@@ -98,18 +98,23 @@ bool X86ExpandMovzxPass::runOnMachineFunction(MachineFunction &MF) {
         MachineInstr &MI = *I;
 
         if (isMovzxToExpand(MI.getOpcode())) {
-          // Check if EFLAGS is live here. XOR will clobber it.
-          if (!LiveRegs.contains(X86::EFLAGS)) {
+          bool Is16Bit = (MI.getOpcode() == X86::MOVZX32rm16 ||
+                          MI.getOpcode() == X86::MOVZX32rr16);
+          // For 8-bit: XOR will clobber EFLAGS, so check liveness.
+          // For 16-bit: no XOR emitted, so EFLAGS check not needed.
+          if (Is16Bit || !LiveRegs.contains(X86::EFLAGS)) {
             Register DstReg = MI.getOperand(0).getReg();
             unsigned SubRegIdx = getSubRegForMovzx(MI.getOpcode());
             Register DstSubReg = TRI->getSubReg(DstReg, SubRegIdx);
             if (DstSubReg) {
-              // For memory operands, check that the destination register
-              // is not used as a base or index register. XOR clears the
-              // dest before MOV, so "xor ecx,ecx; mov cl,[ecx+N]" is
-              // wrong when MOVZX was "movzx ecx, [ecx+N]".
+              // For 8-bit memory operands, check that the destination
+              // register is not used as a base or index register. XOR
+              // clears the dest before MOV, so "xor ecx,ecx;
+              // mov cl,[ecx+N]" is wrong when MOVZX was
+              // "movzx ecx, [ecx+N]".
+              // For 16-bit: no XOR, so no overlap issue.
               bool OverlapsMemOp = false;
-              if (isMemoryMovzx(MI.getOpcode())) {
+              if (!Is16Bit && isMemoryMovzx(MI.getOpcode())) {
                 for (unsigned i = 1; i < MI.getNumOperands(); ++i) {
                   const MachineOperand &MO = MI.getOperand(i);
                   if (MO.isReg() && MO.getReg() != 0 &&
@@ -137,12 +142,18 @@ bool X86ExpandMovzxPass::runOnMachineFunction(MachineFunction &MF) {
       unsigned SubRegIdx = getSubRegForMovzx(MovzxOpcode);
       Register DstSubReg = TRI->getSubReg(DstReg, SubRegIdx);
       DebugLoc DL = MI->getDebugLoc();
+      bool Is16Bit = (MovzxOpcode == X86::MOVZX32rm16 ||
+                      MovzxOpcode == X86::MOVZX32rr16);
 
-      // Insert XOR32rr_REV to clear the full 32-bit register.
-      // Uses opcode 0x33 to match MSVC output.
-      BuildMI(MBB, *MI, DL, TII->get(X86::XOR32rr_REV), DstReg)
-          .addReg(DstReg, RegState::Undef)
-          .addReg(DstReg, RegState::Undef);
+      // For 8-bit MOVZX: insert XOR32rr_REV to clear the full 32-bit
+      // register, then MOV8. Matches MSVC's "xor reg, reg; mov al, [mem]".
+      // For 16-bit MOVZX: emit just MOV16 without XOR. MSVC 6.0 uses
+      // plain "mov cx, [mem]" for 16-bit loads (no zero extension).
+      if (!Is16Bit) {
+        BuildMI(MBB, *MI, DL, TII->get(X86::XOR32rr_REV), DstReg)
+            .addReg(DstReg, RegState::Undef)
+            .addReg(DstReg, RegState::Undef);
+      }
 
       // Insert MOV to load the byte/word into the sub-register.
       if (isMemoryMovzx(MovzxOpcode)) {

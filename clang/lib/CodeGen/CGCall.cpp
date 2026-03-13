@@ -2405,6 +2405,14 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::PreferIncDecByte);
     if (TargetDecl->hasAttr<PreferOrMinusOneAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::PreferOrMinusOne);
+    if (TargetDecl->hasAttr<NoTestSeteFoldAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::NoTestSeteFold);
+    if (TargetDecl->hasAttr<PreferNegSbbAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::PreferNegSbb);
+    if (TargetDecl->hasAttr<PreferSeteEcxAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::PreferSeteEcx);
+    if (const auto *TB = TargetDecl->getAttr<TrailingBytesAttr>())
+      FuncAttrs.addAttribute("trailing_bytes", TB->getBytes());
 
     if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
       AddAttributesFromFunctionProtoType(

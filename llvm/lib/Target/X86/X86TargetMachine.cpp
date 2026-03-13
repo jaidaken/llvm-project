@@ -609,6 +609,13 @@ void X86PassConfig::addPreEmitPass() {
     addPass(createX86FixupVectorConstants());
   }
   addPass(createX86CompressEVEXPass());
+  // bw1-decomp passes: ordering matters.
+  // - PreferNegSbb must run before PreferXOR8 (it matches XOR32rr self-xor
+  //   that PreferXOR8 would downsize to XOR8rr).
+  // - ExpandMovzx runs last (it may create XOR+MOV patterns).
+  addPass(createX86NoTestSeteFoldPass());
+  addPass(createX86PreferNegSbbPass());
+  addPass(createX86PreferSeteEcxPass());
   addPass(createX86PreferXOR8Pass());
   addPass(createX86OrMinusOnePass());
   addPass(createX86PreferIncDecBytePass());
