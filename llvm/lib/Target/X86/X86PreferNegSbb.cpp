@@ -94,9 +94,10 @@ bool X86PreferNegSbbPass::runOnMachineFunction(MachineFunction &MF) {
       }
       Register SrcReg = TestSrc1;
 
-      // Step 3: Find SETEr immediately after TEST.
+      // Step 3: Find SETCCr with COND_E immediately after TEST.
       auto SeteI = std::next(TestI);
-      if (SeteI == E || SeteI->getOpcode() != X86::SETEr) {
+      if (SeteI == E || SeteI->getOpcode() != X86::SETCCr ||
+          X86::getCondFromSETCC(*SeteI) != X86::COND_E) {
         ++I;
         continue;
       }

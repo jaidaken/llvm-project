@@ -18,6 +18,7 @@
 #include "X86Subtarget.h"
 #include "X86TargetMachine.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/CodeGen/LivePhysRegs.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -1561,6 +1562,17 @@ void X86FrameLowering::emitPrologue(MachineFunction &MF,
   Register BasePtr = TRI->getBaseRegister();
   bool HasWinCFI = false;
 
+  // bw1-decomp: NoCalleeSaves suppresses the entire prologue.
+  // No frame pointer, no callee-saved pushes, no sub esp.
+  // The epilogue still generates ret N from the calling convention.
+  if (Fn.hasFnAttribute(Attribute::NoCalleeSaves))
+    return;
+
+  // bw1-decomp: forced_callee_saves suppresses frame pointer and sub esp.
+  // Only the CSR pushes (handled by spillCalleeSavedRegisters) are emitted.
+  if (Fn.hasFnAttribute("forced_callee_saves"))
+    return;
+
   // Debug location must be unknown since the first debug location is used
   // to determine the end of the prologue.
   DebugLoc DL;
@@ -2347,6 +2359,18 @@ static bool isTailCallOpcode(unsigned Opc) {
 
 void X86FrameLowering::emitEpilogue(MachineFunction &MF,
                                     MachineBasicBlock &MBB) const {
+  // bw1-decomp: NoCalleeSaves suppresses the epilogue entirely.
+  // The ret N is already in the MBB as a terminator from instruction
+  // selection — it doesn't need epilogue help.
+  if (MF.getFunction().hasFnAttribute(Attribute::NoCalleeSaves))
+    return;
+
+  // bw1-decomp: forced_callee_saves suppresses epilogue stack adjustments.
+  // Only the CSR pops (handled by restoreCalleeSavedRegisters) and the
+  // ret N terminator are needed.
+  if (MF.getFunction().hasFnAttribute("forced_callee_saves"))
+    return;
+
   const MachineFrameInfo &MFI = MF.getFrameInfo();
   X86MachineFunctionInfo *X86FI = MF.getInfo<X86MachineFunctionInfo>();
   MachineBasicBlock::iterator Terminator = MBB.getFirstTerminator();
@@ -2793,11 +2817,70 @@ X86FrameLowering::getFrameIndexReferencePreferSP(const MachineFunction &MF,
   return getFrameIndexReferenceSP(MF, FI, FrameReg, StackSize);
 }
 
+/// bw1-decomp: Parse a comma-separated register name list (e.g., "ecx,esi,edi")
+/// and return the corresponding physical register numbers.
+static SmallVector<MCPhysReg, 8> parseForcedCalleeSaves(StringRef RegList) {
+  SmallVector<MCPhysReg, 8> Regs;
+  SmallVector<StringRef, 8> Names;
+  RegList.split(Names, ',');
+  for (StringRef Name : Names) {
+    Name = Name.trim();
+    MCPhysReg Reg = StringSwitch<MCPhysReg>(Name.lower())
+        .Case("eax", X86::EAX)
+        .Case("ecx", X86::ECX)
+        .Case("edx", X86::EDX)
+        .Case("ebx", X86::EBX)
+        .Case("esi", X86::ESI)
+        .Case("edi", X86::EDI)
+        .Case("ebp", X86::EBP)
+        .Default(0);
+    if (Reg == 0)
+      report_fatal_error("forced_callee_saves: unknown register '" + Name +
+                         "'");
+    Regs.push_back(Reg);
+  }
+  return Regs;
+}
+
 bool X86FrameLowering::assignCalleeSavedSpillSlots(
     MachineFunction &MF, const TargetRegisterInfo *TRI,
     std::vector<CalleeSavedInfo> &CSI) const {
   MachineFrameInfo &MFI = MF.getFrameInfo();
   X86MachineFunctionInfo *X86FI = MF.getInfo<X86MachineFunctionInfo>();
+
+  // bw1-decomp: forced_callee_saves completely overrides CSI with the
+  // user-specified register list. The registers are stored in REVERSE
+  // push order in CSI so that spillCalleeSavedRegisters (which iterates
+  // CSI in reverse) pushes them in the correct order.
+  const Function &Fn = MF.getFunction();
+  if (Fn.hasFnAttribute("forced_callee_saves")) {
+    StringRef RegList =
+        Fn.getFnAttribute("forced_callee_saves").getValueAsString();
+    SmallVector<MCPhysReg, 8> ForcedRegs = parseForcedCalleeSaves(RegList);
+
+    // Rebuild CSI from forced register list in REVERSE push order.
+    // spillCalleeSavedRegisters iterates rbegin→rend, so last-in-CSI
+    // is pushed first. We want push order = ForcedRegs order, so
+    // CSI should be reversed.
+    CSI.clear();
+    for (auto I = ForcedRegs.rbegin(), E = ForcedRegs.rend(); I != E; ++I)
+      CSI.push_back(CalleeSavedInfo(*I));
+
+    // Allocate stack slots: iterate CSI in reverse (= push order).
+    unsigned CalleeSavedFrameSize = 0;
+    int SpillSlotOffset =
+        getOffsetOfLocalArea() + X86FI->getTCReturnAddrDelta();
+    for (CalleeSavedInfo &Info : llvm::reverse(CSI)) {
+      SpillSlotOffset -= SlotSize;
+      CalleeSavedFrameSize += SlotSize;
+      int SlotIndex =
+          MFI.CreateFixedSpillStackObject(SlotSize, SpillSlotOffset);
+      Info.setFrameIdx(SlotIndex);
+    }
+    X86FI->setCalleeSavedFrameSize(CalleeSavedFrameSize);
+    MFI.setCVBytesOfCalleeSavedRegisters(CalleeSavedFrameSize);
+    return true;
+  }
 
   unsigned CalleeSavedFrameSize = 0;
   unsigned XMMCalleeSavedFrameSize = 0;
@@ -3144,6 +3227,20 @@ bool X86FrameLowering::restoreCalleeSavedRegisters(
 void X86FrameLowering::determineCalleeSaves(MachineFunction &MF,
                                             BitVector &SavedRegs,
                                             RegScavenger *RS) const {
+  const Function &Fn = MF.getFunction();
+
+  // bw1-decomp: forced_callee_saves overrides the normal CSR determination.
+  // The user specifies exactly which registers to save/restore.
+  if (Fn.hasFnAttribute("forced_callee_saves")) {
+    SavedRegs.resize(TRI->getNumRegs());
+    StringRef RegList =
+        Fn.getFnAttribute("forced_callee_saves").getValueAsString();
+    SmallVector<MCPhysReg, 8> ForcedRegs = parseForcedCalleeSaves(RegList);
+    for (MCPhysReg Reg : ForcedRegs)
+      SavedRegs.set(Reg);
+    return;
+  }
+
   TargetFrameLowering::determineCalleeSaves(MF, SavedRegs, RS);
 
   // Spill the BasePtr if it's used.

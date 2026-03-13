@@ -43,20 +43,9 @@ public:
 
 char X86PreferSeteEcxPass::ID = 0;
 
-/// Check if the opcode is a SETcc to an 8-bit register.
-static bool isSETccReg(unsigned Opc) {
-  switch (Opc) {
-  case X86::SETEr:  case X86::SETNEr:
-  case X86::SETAr:  case X86::SETAEr:
-  case X86::SETBr:  case X86::SETBEr:
-  case X86::SETGr:  case X86::SETGEr:
-  case X86::SETLr:  case X86::SETLEr:
-  case X86::SETSr:  case X86::SETNSr:
-  case X86::SETPr:  case X86::SETNPr:
-    return true;
-  default:
-    return false;
-  }
+/// Check if the instruction is a SETCCr (SETcc to an 8-bit register).
+static bool isSETccReg(const MachineInstr &MI) {
+  return MI.getOpcode() == X86::SETCCr;
 }
 
 bool X86PreferSeteEcxPass::runOnMachineFunction(MachineFunction &MF) {
@@ -97,7 +86,7 @@ bool X86PreferSeteEcxPass::runOnMachineFunction(MachineFunction &MF) {
               auto PrevI = std::next(I);
               while (PrevI != E) {
                 MachineInstr &Prev = *PrevI;
-                if (isSETccReg(Prev.getOpcode()) &&
+                if (isSETccReg(Prev) &&
                     Prev.getOperand(0).getReg() == X86::AL) {
                   Patterns.push_back({&Prev, &MI});
                   break;
@@ -121,13 +110,14 @@ bool X86PreferSeteEcxPass::runOnMachineFunction(MachineFunction &MF) {
     // Pass 2: Replace patterns.
     for (auto &P : Patterns) {
       DebugLoc DL = P.SetccMI->getDebugLoc();
-      unsigned SetccOpc = P.SetccMI->getOpcode();
+      X86::CondCode CC = X86::getCondFromSETCC(*P.SetccMI);
 
       // Replace: sete al; movzx eax, al
       // With:    sete cl; movzx eax, cl
 
-      // New SETcc CL.
-      BuildMI(MBB, *P.SetccMI, DL, TII->get(SetccOpc), X86::CL);
+      // New SETCCr CL with same condition code.
+      BuildMI(MBB, *P.SetccMI, DL, TII->get(X86::SETCCr), X86::CL)
+          .addImm(CC);
 
       // New MOVZX32rr8 EAX, CL.
       BuildMI(MBB, *P.MovzxMI, DL, TII->get(X86::MOVZX32rr8), X86::EAX)

@@ -674,7 +674,10 @@ void PEI::spillCalleeSavedRegs(MachineFunction &MF) {
   assignCalleeSavedSpillSlots(MF, SavedRegs, MinCSFrameIndex, MaxCSFrameIndex);
 
   // Add the code to save and restore the callee saved registers.
-  if (!F.hasFnAttribute(Attribute::Naked)) {
+  // bw1-decomp: NoCalleeSaves skips CSR saves (like Naked) but keeps
+  // prologue/epilogue for ret N generation.
+  if (!F.hasFnAttribute(Attribute::Naked) &&
+      !F.hasFnAttribute(Attribute::NoCalleeSaves)) {
     MFI.setCalleeSavedInfoValid(true);
 
     std::vector<CalleeSavedInfo> &CSI = MFI.getCalleeSavedInfo();

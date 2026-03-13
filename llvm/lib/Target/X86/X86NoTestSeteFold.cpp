@@ -46,14 +46,16 @@ public:
 
 char X86NoTestSeteFoldPass::ID = 0;
 
-/// Check if opcode is a SETcc that tests for equality (ZF=1).
-static bool isSETEOpcode(unsigned Opc) {
-  return Opc == X86::SETEr || Opc == X86::SETEm;
+/// Check if instruction is a SETcc that tests for equality (ZF=1).
+static bool isSETEInstr(const MachineInstr &MI) {
+  return (MI.getOpcode() == X86::SETCCr || MI.getOpcode() == X86::SETCCm) &&
+         X86::getCondFromSETCC(MI) == X86::COND_E;
 }
 
-/// Check if opcode is a SETcc that tests for inequality (ZF=0).
-static bool isSETNEOpcode(unsigned Opc) {
-  return Opc == X86::SETNEr || Opc == X86::SETNEm;
+/// Check if instruction is a SETcc that tests for inequality (ZF=0).
+static bool isSETNEInstr(const MachineInstr &MI) {
+  return (MI.getOpcode() == X86::SETCCr || MI.getOpcode() == X86::SETCCm) &&
+         X86::getCondFromSETCC(MI) == X86::COND_NE;
 }
 
 /// Get the 32-bit super-register for an 8-bit register.
@@ -102,8 +104,8 @@ bool X86NoTestSeteFoldPass::runOnMachineFunction(MachineFunction &MF) {
       // Skip over any intervening instructions that don't read/write EFLAGS.
       MachineInstr *SetccMI = nullptr;
       while (NextI != E) {
-        if (isSETEOpcode(NextI->getOpcode()) ||
-            isSETNEOpcode(NextI->getOpcode())) {
+        if (isSETEInstr(*NextI) ||
+            isSETNEInstr(*NextI)) {
           SetccMI = &*NextI;
           break;
         }
@@ -113,8 +115,9 @@ bool X86NoTestSeteFoldPass::runOnMachineFunction(MachineFunction &MF) {
         ++NextI;
       }
 
-      // Only handle SETEr (register form, not memory) — computes (~x >> N) & 1.
-      if (!SetccMI || SetccMI->getOpcode() != X86::SETEr) {
+      // Only handle SETCCr with COND_E (register form, not memory) — computes (~x >> N) & 1.
+      if (!SetccMI || SetccMI->getOpcode() != X86::SETCCr ||
+          X86::getCondFromSETCC(*SetccMI) != X86::COND_E) {
         ++I;
         continue;
       }

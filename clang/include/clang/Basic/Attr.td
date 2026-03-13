@@ -5024,3 +5024,17 @@ def PreferSeteEcx: InheritableAttr {
   let Documentation = [Undocumented];
   let SimpleHandler = 1;
 }
+
+def NoCalleeSaves: InheritableAttr {
+  let Spellings = [GNU<"no_callee_saves">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def ForcedCalleeSaves: InheritableAttr {
+  let Spellings = [GNU<"forced_callee_saves">];
+  let Args = [StringArgument<"Registers">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+}

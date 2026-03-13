@@ -123,6 +123,11 @@ void TargetFrameLowering::determineCalleeSaves(MachineFunction &MF,
   if (MF.getFunction().hasFnAttribute(Attribute::Naked))
     return;
 
+  // bw1-decomp: NoCalleeSaves suppresses all callee-saved register saves.
+  // Unlike Naked, the function still gets parameter lowering and ret N.
+  if (MF.getFunction().hasFnAttribute(Attribute::NoCalleeSaves))
+    return;
+
   // Noreturn+nounwind functions never restore CSR, so no saves are needed.
   // Purely noreturn functions may still return through throws, so those must
   // save CSR for caller exception handlers.

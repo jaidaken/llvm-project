@@ -2411,6 +2411,10 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::PreferNegSbb);
     if (TargetDecl->hasAttr<PreferSeteEcxAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::PreferSeteEcx);
+    if (TargetDecl->hasAttr<NoCalleeSavesAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::NoCalleeSaves);
+    if (const auto *FCS = TargetDecl->getAttr<ForcedCalleeSavesAttr>())
+      FuncAttrs.addAttribute("forced_callee_saves", FCS->getRegisters());
     if (const auto *TB = TargetDecl->getAttr<TrailingBytesAttr>())
       FuncAttrs.addAttribute("trailing_bytes", TB->getBytes());
 

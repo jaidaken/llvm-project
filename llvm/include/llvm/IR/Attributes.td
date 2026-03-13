@@ -497,3 +497,6 @@ def PreferNegSbb : EnumAttr<"PreferNegSbb", IntersectPreserve, [FnAttr]>;
 
 /// Route sete through ECX (sete cl; movzx eax, cl) instead of sete al.
 def PreferSeteEcx : EnumAttr<"PreferSeteEcx", IntersectPreserve, [FnAttr]>;
+
+/// Suppress all callee-saved register saves and stack allocation.
+def NoCalleeSaves : EnumAttr<"NoCalleeSaves", IntersectPreserve, [FnAttr]>;
