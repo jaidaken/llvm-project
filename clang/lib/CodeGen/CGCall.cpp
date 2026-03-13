@@ -2401,6 +2401,10 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::SuppressFPImm);
     if (TargetDecl->hasAttr<PreferXOR8Attr>())
       FuncAttrs.addAttribute(llvm::Attribute::PreferXOR8);
+    if (TargetDecl->hasAttr<PreferIncDecByteAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::PreferIncDecByte);
+    if (TargetDecl->hasAttr<PreferOrMinusOneAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::PreferOrMinusOne);
 
     if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
       AddAttributesFromFunctionProtoType(

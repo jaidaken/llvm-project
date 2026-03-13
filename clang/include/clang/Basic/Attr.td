@@ -4982,3 +4982,17 @@ def PreferXOR8: InheritableAttr {
   let Documentation = [Undocumented];
   let SimpleHandler = 1;
 }
+
+def PreferIncDecByte: InheritableAttr {
+  let Spellings = [GNU<"prefer_inc_dec_byte">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferOrMinusOne: InheritableAttr {
+  let Spellings = [GNU<"prefer_or_minus_one">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}

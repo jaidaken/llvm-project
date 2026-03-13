@@ -129,9 +129,17 @@ FunctionPass *createX86ExpandMovzxPass();
 /// zeroing idioms to XOR8rr/XOR8rr_REV for functions with prefer_xor8.
 FunctionPass *createX86PreferXOR8Pass();
 
+/// Return a Machine IR pass that replaces movzx+add/sub+mov byte sequences
+/// with INC8m/DEC8m for functions with prefer_inc_dec_byte.
+FunctionPass *createX86PreferIncDecBytePass();
+
 /// Return a Machine IR pass that converts FLDZ/FLD1 pseudo instructions to
 /// constant pool memory loads for functions with the suppress_fp_imm attribute.
 FunctionPass *createX86SuppressFPImmPass();
+
+/// Return a Machine IR pass that converts MOV32ri reg, 0xFFFFFFFF to
+/// OR32ri8 reg, -1 for functions with the prefer_or_minus_one attribute.
+FunctionPass *createX86OrMinusOnePass();
 
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();

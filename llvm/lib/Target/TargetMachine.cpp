@@ -204,9 +204,13 @@ bool TargetMachine::shouldAssumeDSOLocal(const GlobalValue *GV) const {
     // don't assume the variables to be DSO local unless we actually know
     // that for sure. This only has to be done for variables; for functions
     // the linker can insert thunks for calling functions from another DLL.
-    if (TT.isWindowsGNUEnvironment() && GV->isDeclarationForLinker() &&
-        isa<GlobalVariable>(GV))
-      return false;
+    // bw1-decomp: Disabled MinGW auto-import check. All symbols in the
+    // decomp project are statically linked within the same executable.
+    // This eliminates .refptr indirection for external variable references,
+    // allowing direct fld dword ptr [_symbol] instead of indirect access.
+    // if (TT.isWindowsGNUEnvironment() && GV->isDeclarationForLinker() &&
+    //     isa<GlobalVariable>(GV))
+    //   return false;
 
     // Don't mark 'extern_weak' symbols as DSO local. If these symbols remain
     // unresolved in the link, they can be resolved to zero, which is outside

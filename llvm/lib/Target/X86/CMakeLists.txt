@@ -42,7 +42,9 @@ set(sources
   X86ExpandPseudo.cpp
   X86ExpandMovzx.cpp
   X86PreferXOR8.cpp
+  X86PreferIncDecByte.cpp
   X86SuppressFPImm.cpp
+  X86OrMinusOne.cpp
   X86FastISel.cpp
   X86FixupBWInsts.cpp
   X86FixupLEAs.cpp

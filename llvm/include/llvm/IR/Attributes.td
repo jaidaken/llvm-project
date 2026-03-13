@@ -482,3 +482,9 @@ def SuppressFPImm : EnumAttr<"SuppressFPImm", IntersectPreserve, [FnAttr]>;
 
 /// Convert XOR32rr/XOR32rr_REV self-xor zeroing to XOR8rr/XOR8rr_REV.
 def PreferXOR8 : EnumAttr<"PreferXOR8", IntersectPreserve, [FnAttr]>;
+
+/// Replace movzx+add/sub+mov byte sequences with INC8m/DEC8m.
+def PreferIncDecByte : EnumAttr<"PreferIncDecByte", IntersectPreserve, [FnAttr]>;
+
+/// Convert MOV32ri reg, 0xFFFFFFFF to OR32ri8 reg, -1.
+def PreferOrMinusOne : EnumAttr<"PreferOrMinusOne", IntersectPreserve, [FnAttr]>;
