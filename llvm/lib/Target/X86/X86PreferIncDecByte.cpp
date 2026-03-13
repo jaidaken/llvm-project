@@ -209,10 +209,24 @@ bool X86PreferIncDecBytePass::runOnMachineFunction(MachineFunction &MF) {
         if (!MI2.getOperand(2).isImm() || MI2.getOperand(2).getImm() != 1)
           continue;
         IsInc = true;
+      } else if (ArithOpcode == X86::ADD8ri) {
+        // ADD8ri: def GR8:$dst, tied GR8:$src1, i8imm:$src2
+        if (MI2.getOperand(0).getReg() != DstReg8 ||
+            MI2.getOperand(1).getReg() != DstReg8)
+          continue;
+        if (!MI2.getOperand(2).isImm() || MI2.getOperand(2).getImm() != 1)
+          continue;
+        IsInc = true;
       } else if (ArithOpcode == X86::INC32r) {
         // INC32r: def GR32:$dst, tied GR32:$src
         if (MI2.getOperand(0).getReg() != DstReg32 ||
             MI2.getOperand(1).getReg() != DstReg32)
+          continue;
+        IsInc = true;
+      } else if (ArithOpcode == X86::INC8r) {
+        // INC8r: def GR8:$dst, tied GR8:$src
+        if (MI2.getOperand(0).getReg() != DstReg8 ||
+            MI2.getOperand(1).getReg() != DstReg8)
           continue;
         IsInc = true;
       } else if (ArithOpcode == X86::SUB32ri8) {
@@ -223,10 +237,24 @@ bool X86PreferIncDecBytePass::runOnMachineFunction(MachineFunction &MF) {
         if (!MI2.getOperand(2).isImm() || MI2.getOperand(2).getImm() != 1)
           continue;
         IsInc = false;
+      } else if (ArithOpcode == X86::SUB8ri) {
+        // SUB8ri: def GR8:$dst, tied GR8:$src1, i8imm:$src2
+        if (MI2.getOperand(0).getReg() != DstReg8 ||
+            MI2.getOperand(1).getReg() != DstReg8)
+          continue;
+        if (!MI2.getOperand(2).isImm() || MI2.getOperand(2).getImm() != 1)
+          continue;
+        IsInc = false;
       } else if (ArithOpcode == X86::DEC32r) {
         // DEC32r: def GR32:$dst, tied GR32:$src
         if (MI2.getOperand(0).getReg() != DstReg32 ||
             MI2.getOperand(1).getReg() != DstReg32)
+          continue;
+        IsInc = false;
+      } else if (ArithOpcode == X86::DEC8r) {
+        // DEC8r: def GR8:$dst, tied GR8:$src
+        if (MI2.getOperand(0).getReg() != DstReg8 ||
+            MI2.getOperand(1).getReg() != DstReg8)
           continue;
         IsInc = false;
       } else {
