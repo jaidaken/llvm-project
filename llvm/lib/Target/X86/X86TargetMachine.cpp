@@ -576,6 +576,7 @@ void X86PassConfig::addMachineSSAOptimization() {
 
 void X86PassConfig::addPostRegAlloc() {
   addPass(createX86LowerTileCopyPass());
+  addPass(createX86SuppressFPImmPass());
   addPass(createX86FloatingPointStackifierPass());
   // When -O0 is enabled, the Load Value Injection Hardening pass will fall back
   // to using the Speculative Execution Side Effect Suppression pass for
@@ -608,6 +609,7 @@ void X86PassConfig::addPreEmitPass() {
     addPass(createX86FixupVectorConstants());
   }
   addPass(createX86CompressEVEXPass());
+  addPass(createX86PreferXOR8Pass());
   addPass(createX86ExpandMovzxPass());
   addPass(createX86DiscriminateMemOpsPass());
   addPass(createX86InsertPrefetchPass());

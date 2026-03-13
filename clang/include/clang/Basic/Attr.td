@@ -4968,3 +4968,17 @@ def ExpandMovzx: InheritableAttr {
   let Documentation = [Undocumented];
   let SimpleHandler = 1;
 }
+
+def SuppressFPImm: InheritableAttr {
+  let Spellings = [GNU<"suppress_fp_imm">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferXOR8: InheritableAttr {
+  let Spellings = [GNU<"prefer_xor8">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}

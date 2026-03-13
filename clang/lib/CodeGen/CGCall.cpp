@@ -2397,6 +2397,10 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::NoBoolMask);
     if (TargetDecl->hasAttr<ExpandMovzxAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::ExpandMovzx);
+    if (TargetDecl->hasAttr<SuppressFPImmAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::SuppressFPImm);
+    if (TargetDecl->hasAttr<PreferXOR8Attr>())
+      FuncAttrs.addAttribute(llvm::Attribute::PreferXOR8);
 
     if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
       AddAttributesFromFunctionProtoType(

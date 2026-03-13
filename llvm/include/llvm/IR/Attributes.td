@@ -476,3 +476,9 @@ def NoBoolMask : EnumAttr<"NoBoolMask", IntersectPreserve, [FnAttr]>;
 
 /// Expand MOVZX32rm8 to XOR32rr + MOV8rm sequence.
 def ExpandMovzx : EnumAttr<"ExpandMovzx", IntersectPreserve, [FnAttr]>;
+
+/// Suppress FLDZ/FLD1 immediates, use constant pool loads instead.
+def SuppressFPImm : EnumAttr<"SuppressFPImm", IntersectPreserve, [FnAttr]>;
+
+/// Convert XOR32rr/XOR32rr_REV self-xor zeroing to XOR8rr/XOR8rr_REV.
+def PreferXOR8 : EnumAttr<"PreferXOR8", IntersectPreserve, [FnAttr]>;
