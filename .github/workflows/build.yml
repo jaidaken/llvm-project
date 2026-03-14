@@ -1,9 +1,10 @@
 name: Build
 on:
-  push:
-    branches: ['bw1-decomp', 'bw1-decomp-*']
-    tags: ['bw1-decomp-*']
-  pull_request:
+  # Disabled: building locally is faster. Re-enable for CI releases.
+  # push:
+  #   branches: ['bw1-decomp', 'bw1-decomp-*']
+  #   tags: ['bw1-decomp-*']
+  # pull_request:
   workflow_dispatch:
 jobs:
   build:
