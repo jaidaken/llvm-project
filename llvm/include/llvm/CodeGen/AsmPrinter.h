@@ -854,6 +854,12 @@ public:
   static Align getGVAlignment(const GlobalObject *GV, const DataLayout &DL,
                               Align InAlign = Align(1));
 
+protected:
+  // bw1-decomp: moved from private to protected so X86AsmPrinter can call
+  // emitFunctionHeader() for msvc6_sdtor functions that bypass emitFunctionBody().
+  /// This method emits the header for the current function.
+  virtual void emitFunctionHeader();
+
 private:
   /// Private state for PrintSpecial()
   // Assign a unique ID to this machine instruction.
@@ -862,9 +868,6 @@ private:
   mutable unsigned Counter = ~0U;
 
   bool DwarfUsesRelocationsAcrossSections = false;
-
-  /// This method emits the header for the current function.
-  virtual void emitFunctionHeader();
 
   /// This method emits a comment next to header for the current function.
   virtual void emitFunctionHeaderComment();

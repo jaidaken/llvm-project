@@ -206,7 +206,7 @@ void X86AsmPrinter::emitMsvc6Sdtor() {
 
   // mov esi, ecx  (8B F1)
   OutStreamer->emitInstruction(
-      MCInstBuilder(X86::MOV32rr).addReg(X86::ESI).addReg(X86::ECX), STI);
+      MCInstBuilder(X86::MOV32rr_REV).addReg(X86::ESI).addReg(X86::ECX), STI);
 
   // Optional: mov dword ptr [esi], offset <vtable>  (C7 06 <addr32>)
   if (HasVtable) {
@@ -252,7 +252,7 @@ void X86AsmPrinter::emitMsvc6Sdtor() {
   // Optional: push <size>  (68 <imm32>)
   if (Is2Arg) {
     OutStreamer->emitInstruction(
-        MCInstBuilder(X86::PUSHi32).addImm(DeleteSize), STI);
+        MCInstBuilder(X86::PUSH32i).addImm(DeleteSize), STI);
   }
 
   // push esi  (56)
@@ -279,7 +279,7 @@ void X86AsmPrinter::emitMsvc6Sdtor() {
 
   // mov eax, esi  (8B C6)
   OutStreamer->emitInstruction(
-      MCInstBuilder(X86::MOV32rr).addReg(X86::EAX).addReg(X86::ESI), STI);
+      MCInstBuilder(X86::MOV32rr_REV).addReg(X86::EAX).addReg(X86::ESI), STI);
 
   // pop esi  (5E)
   OutStreamer->emitInstruction(
