@@ -84,6 +84,19 @@ bool X86AsmPrinter::runOnMachineFunction(MachineFunction &MF) {
     OutStreamer->endCOFFSymbolDef();
   }
 
+  // bw1-decomp: For msvc6_sdtor functions, emit the custom scalar deleting
+  // destructor body directly, bypassing normal codegen.  The attribute encodes
+  // all the symbols and parameters needed to generate the exact MSVC 6.0
+  // instruction sequence.
+  if (MF.getFunction().hasFnAttribute("msvc6_sdtor")) {
+    emitFunctionHeader();
+    emitMsvc6Sdtor();
+    emitFunctionBodyEnd();
+    EmitFPOData = false;
+    IndCSPrefix = false;
+    return false;
+  }
+
   // Emit the rest of the function body.
   emitFunctionBody();
 
@@ -125,6 +138,156 @@ void X86AsmPrinter::emitFunctionBodyEnd() {
             .getValueAsString();
     OutStreamer->emitBytes(Bytes);
   }
+}
+
+// bw1-decomp: Emit a scalar deleting destructor function body matching
+// MSVC 6.0 codegen.  The attribute string format is:
+//   "dtor_sym,delete_sym,size,vtable_sym"
+// where:
+//   dtor_sym   - destructor symbol name (empty = no destructor call)
+//   delete_sym - operator delete symbol name
+//   size       - decimal size for 2-arg delete (0 = 1-arg delete)
+//   vtable_sym - vtable symbol name (empty = no vtable write)
+//
+// The generated instruction sequence is:
+//   push esi
+//   mov esi, ecx
+//   [mov dword ptr [esi], offset <vtable>]   ; if vtable_sym
+//   [call <dtor>]                             ; if dtor_sym
+//   test byte ptr [esp+8], 1
+//   je skip
+//   [push <size>]                             ; if size > 0
+//   push esi
+//   call <delete>
+//   [add esp, 8]                              ; if size > 0
+//   [add esp, 4]                              ; if size == 0
+// skip:
+//   mov eax, esi
+//   pop esi
+//   ret 4
+void X86AsmPrinter::emitMsvc6Sdtor() {
+  const MCSubtargetInfo &STI = getSubtargetInfo();
+  MCContext &Ctx = OutContext;
+
+  StringRef AttrVal =
+      MF->getFunction().getFnAttribute("msvc6_sdtor").getValueAsString();
+
+  // Parse comma-separated parameters.
+  SmallVector<StringRef, 4> Parts;
+  AttrVal.split(Parts, ',', /*MaxSplit=*/3);
+  if (Parts.size() < 4) {
+    report_fatal_error("msvc6_sdtor: expected 4 comma-separated fields: "
+                       "dtor_sym,delete_sym,size,vtable_sym");
+  }
+
+  StringRef DtorSym = Parts[0].trim();
+  StringRef DeleteSym = Parts[1].trim();
+  unsigned DeleteSize = 0;
+  Parts[2].trim().getAsInteger(0, DeleteSize);
+  StringRef VtableSym = Parts[3].trim();
+
+  bool HasVtable = !VtableSym.empty();
+  bool HasDtor = !DtorSym.empty();
+  bool Is2Arg = DeleteSize > 0;
+
+  // Compute the short jump distance for je.  Each instruction contributes
+  // a known number of bytes:
+  //   push imm32 = 5, push esi = 1, call rel32 = 5, add esp,N = 3
+  unsigned JeTarget = 1 + 5 + 3; // push esi + call delete + add esp,4
+  if (Is2Arg)
+    JeTarget = 5 + 1 + 5 + 3; // push size + push esi + call delete + add esp,8
+
+  // Create skip label.
+  MCSymbol *SkipSym = Ctx.createTempSymbol("sdtor_skip");
+
+  // push esi  (56)
+  OutStreamer->emitInstruction(
+      MCInstBuilder(X86::PUSH32r).addReg(X86::ESI), STI);
+
+  // mov esi, ecx  (8B F1)
+  OutStreamer->emitInstruction(
+      MCInstBuilder(X86::MOV32rr).addReg(X86::ESI).addReg(X86::ECX), STI);
+
+  // Optional: mov dword ptr [esi], offset <vtable>  (C7 06 <addr32>)
+  if (HasVtable) {
+    MCSymbol *VtSym = Ctx.getOrCreateSymbol(VtableSym);
+    OutStreamer->emitInstruction(
+        MCInstBuilder(X86::MOV32mi)
+            .addReg(X86::ESI) // base
+            .addImm(1)        // scale
+            .addReg(0)        // index
+            .addImm(0)        // disp
+            .addReg(0)        // segment
+            .addExpr(MCSymbolRefExpr::create(VtSym, Ctx)),
+        STI);
+  }
+
+  // Optional: call <destructor>  (E8 <rel32>)
+  if (HasDtor) {
+    MCSymbol *DtSym = Ctx.getOrCreateSymbol(DtorSym);
+    OutStreamer->emitInstruction(
+        MCInstBuilder(X86::CALLpcrel32)
+            .addExpr(MCSymbolRefExpr::create(DtSym, Ctx)),
+        STI);
+  }
+
+  // test byte ptr [esp+8], 1  (F6 44 24 08 01)
+  OutStreamer->emitInstruction(
+      MCInstBuilder(X86::TEST8mi)
+          .addReg(X86::ESP) // base
+          .addImm(1)        // scale
+          .addReg(0)        // index
+          .addImm(8)        // disp
+          .addReg(0)        // segment
+          .addImm(1),       // immediate
+      STI);
+
+  // je skip  (74 XX)
+  OutStreamer->emitInstruction(
+      MCInstBuilder(X86::JCC_1)
+          .addExpr(MCSymbolRefExpr::create(SkipSym, Ctx))
+          .addImm(X86::COND_E),
+      STI);
+
+  // Optional: push <size>  (68 <imm32>)
+  if (Is2Arg) {
+    OutStreamer->emitInstruction(
+        MCInstBuilder(X86::PUSHi32).addImm(DeleteSize), STI);
+  }
+
+  // push esi  (56)
+  OutStreamer->emitInstruction(
+      MCInstBuilder(X86::PUSH32r).addReg(X86::ESI), STI);
+
+  // call <delete>  (E8 <rel32>)
+  MCSymbol *DelSym = Ctx.getOrCreateSymbol(DeleteSym);
+  OutStreamer->emitInstruction(
+      MCInstBuilder(X86::CALLpcrel32)
+          .addExpr(MCSymbolRefExpr::create(DelSym, Ctx)),
+      STI);
+
+  // add esp, N  (83 C4 04 or 83 C4 08)
+  OutStreamer->emitInstruction(
+      MCInstBuilder(X86::ADD32ri8)
+          .addReg(X86::ESP)
+          .addReg(X86::ESP)
+          .addImm(Is2Arg ? 8 : 4),
+      STI);
+
+  // skip:
+  OutStreamer->emitLabel(SkipSym);
+
+  // mov eax, esi  (8B C6)
+  OutStreamer->emitInstruction(
+      MCInstBuilder(X86::MOV32rr).addReg(X86::EAX).addReg(X86::ESI), STI);
+
+  // pop esi  (5E)
+  OutStreamer->emitInstruction(
+      MCInstBuilder(X86::POP32r).addReg(X86::ESI), STI);
+
+  // ret 4  (C2 04 00)
+  OutStreamer->emitInstruction(
+      MCInstBuilder(X86::RETI32).addImm(4), STI);
 }
 
 uint32_t X86AsmPrinter::MaskKCFIType(uint32_t Value) {

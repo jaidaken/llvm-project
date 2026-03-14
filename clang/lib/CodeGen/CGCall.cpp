@@ -2421,6 +2421,10 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("forced_callee_saves", FCS->getRegisters());
     if (const auto *TB = TargetDecl->getAttr<TrailingBytesAttr>())
       FuncAttrs.addAttribute("trailing_bytes", TB->getBytes());
+    if (const auto *Sdtor = TargetDecl->getAttr<Msvc6SdtorAttr>()) {
+      FuncAttrs.addAttribute("msvc6_sdtor", Sdtor->getParams());
+      FuncAttrs.addAttribute(llvm::Attribute::NoCalleeSaves);
+    }
 
     if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
       AddAttributesFromFunctionProtoType(

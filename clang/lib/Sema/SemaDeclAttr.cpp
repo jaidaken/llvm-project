@@ -2918,6 +2918,13 @@ static void handleForcedCalleeSavesAttr(Sema &S, Decl *D,
   D->addAttr(::new (S.Context) ForcedCalleeSavesAttr(S.Context, AL, Str));
 }
 
+static void handleMsvc6SdtorAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  StringRef Str;
+  if (!S.checkStringLiteralArgumentAttr(AL, 0, Str))
+    return;
+  D->addAttr(::new (S.Context) Msvc6SdtorAttr(S.Context, AL, Str));
+}
+
 static void handleCodeModelAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   StringRef Str;
   SourceLocation LiteralLoc;
@@ -6947,6 +6954,9 @@ ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D, const ParsedAttr &AL,
     break;
   case ParsedAttr::AT_ForcedCalleeSaves:
     handleForcedCalleeSavesAttr(S, D, AL);
+    break;
+  case ParsedAttr::AT_Msvc6Sdtor:
+    handleMsvc6SdtorAttr(S, D, AL);
     break;
   case ParsedAttr::AT_CodeModel:
     handleCodeModelAttr(S, D, AL);

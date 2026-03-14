@@ -158,6 +158,7 @@ public:
   bool runOnMachineFunction(MachineFunction &MF) override;
   void emitFunctionBodyStart() override;
   void emitFunctionBodyEnd() override;
+  void emitMsvc6Sdtor();
   void emitKCFITypeId(const MachineFunction &MF) override;
 
   bool shouldEmitWeakSwiftAsyncExtendedFramePointerFlags() const override {
