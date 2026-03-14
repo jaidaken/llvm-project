@@ -70,6 +70,7 @@ class COFFAsmParser : public MCAsmParserExtension {
     addDirectiveHandler<&COFFAsmParser::parseDirectiveSymbolAttribute>(
         ".weak_anti_dep");
     addDirectiveHandler<&COFFAsmParser::parseDirectiveCGProfile>(".cg_profile");
+    addDirectiveHandler<&COFFAsmParser::parseDirectiveNoPad>(".no_pad");
 
     // Win64 EH directives.
     addDirectiveHandler<&COFFAsmParser::parseSEHDirectiveStartProc>(
@@ -112,6 +113,7 @@ class COFFAsmParser : public MCAsmParserExtension {
 
   bool parseDirectiveSection(StringRef, SMLoc);
   bool parseSectionArguments(StringRef, SMLoc);
+  bool parseDirectiveNoPad(StringRef, SMLoc);
   bool parseDirectivePushSection(StringRef, SMLoc);
   bool parseDirectivePopSection(StringRef, SMLoc);
   bool parseDirectiveDef(StringRef, SMLoc);
@@ -161,6 +163,7 @@ bool COFFAsmParser::parseSectionFlags(StringRef SectionName,
     NoWrite = 1 << 7,
     Discardable = 1 << 8,
     Info = 1 << 9,
+    NoPad = 1 << 10,
   };
 
   bool ReadOnlyRemoved = false;
@@ -234,6 +237,10 @@ bool COFFAsmParser::parseSectionFlags(StringRef SectionName,
       SecFlags |= Info;
       break;
 
+    case 'p': // no pad (IMAGE_SCN_TYPE_NO_PAD)
+      SecFlags |= NoPad;
+      break;
+
     default:
       return TokError("unknown flag");
     }
@@ -263,6 +270,8 @@ bool COFFAsmParser::parseSectionFlags(StringRef SectionName,
     *Flags |= COFF::IMAGE_SCN_MEM_SHARED;
   if (SecFlags & Info)
     *Flags |= COFF::IMAGE_SCN_LNK_INFO;
+  if (SecFlags & NoPad)
+    *Flags |= COFF::IMAGE_SCN_TYPE_NO_PAD;
 
   return false;
 }
@@ -333,6 +342,18 @@ bool COFFAsmParser::parseSectionName(StringRef &SectionName) {
 
 bool COFFAsmParser::parseDirectiveSection(StringRef directive, SMLoc loc) {
   return parseSectionArguments(directive, loc);
+}
+
+// bw1-decomp: .no_pad sets IMAGE_SCN_TYPE_NO_PAD on the current section.
+// This prevents the linker from adding alignment padding before this section.
+bool COFFAsmParser::parseDirectiveNoPad(StringRef, SMLoc) {
+  if (getLexer().isNot(AsmToken::EndOfStatement))
+    return TokError("unexpected token in '.no_pad' directive");
+
+  auto *Sec = static_cast<const MCSectionCOFF *>(getStreamer().getCurrentSectionOnly());
+  Sec->setCharacteristics(Sec->getCharacteristics() | COFF::IMAGE_SCN_TYPE_NO_PAD);
+
+  return false;
 }
 
 // .section name [, "flags"] [, identifier [ identifier ], identifier]

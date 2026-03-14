@@ -67,6 +67,7 @@ public:
   bool shouldOmitSectionDirective(StringRef Name, const MCAsmInfo &MAI) const;
 
   unsigned getCharacteristics() const { return Characteristics; }
+  void setCharacteristics(unsigned C) const { Characteristics = C; }
   MCSymbol *getCOMDATSymbol() const { return COMDATSymbol; }
   int getSelection() const { return Selection; }
 
