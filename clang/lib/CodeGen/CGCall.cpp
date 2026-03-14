@@ -2413,6 +2413,10 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::PreferSeteEcx);
     if (TargetDecl->hasAttr<NoCalleeSavesAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::NoCalleeSaves);
+    if (TargetDecl->hasAttr<PreferFmulMemAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::PreferFmulMem);
+    if (TargetDecl->hasAttr<PreferPopCleanupAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::PreferPopCleanup);
     if (const auto *FCS = TargetDecl->getAttr<ForcedCalleeSavesAttr>())
       FuncAttrs.addAttribute("forced_callee_saves", FCS->getRegisters());
     if (const auto *TB = TargetDecl->getAttr<TrailingBytesAttr>())

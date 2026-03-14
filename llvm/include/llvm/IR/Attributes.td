@@ -500,3 +500,9 @@ def PreferSeteEcx : EnumAttr<"PreferSeteEcx", IntersectPreserve, [FnAttr]>;
 
 /// Suppress all callee-saved register saves and stack allocation.
 def NoCalleeSaves : EnumAttr<"NoCalleeSaves", IntersectPreserve, [FnAttr]>;
+
+/// Fold fld+fmulp into memory-form fmul dword ptr [mem].
+def PreferFmulMem : EnumAttr<"PreferFmulMem", IntersectPreserve, [FnAttr]>;
+
+/// Use pop ecx instead of add esp, 4 for cdecl stack cleanup.
+def PreferPopCleanup : EnumAttr<"PreferPopCleanup", IntersectPreserve, [FnAttr]>;

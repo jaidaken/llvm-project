@@ -5038,3 +5038,17 @@ def ForcedCalleeSaves: InheritableAttr {
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
 }
+
+def PreferFmulMem: InheritableAttr {
+  let Spellings = [GNU<"prefer_fmul_mem">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferPopCleanup: InheritableAttr {
+  let Spellings = [GNU<"prefer_pop_cleanup">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}

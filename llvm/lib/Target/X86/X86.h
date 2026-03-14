@@ -153,6 +153,14 @@ FunctionPass *createX86PreferNegSbbPass();
 /// for functions with the prefer_sete_ecx attribute.
 FunctionPass *createX86PreferSeteEcxPass();
 
+/// Return a Machine IR pass that folds fld+fmulp into memory-form fmul
+/// for functions with the prefer_fmul_mem attribute.
+FunctionPass *createX86PreferFmulMemPass();
+
+/// Return a Machine IR pass that replaces add esp, 4 with pop ecx
+/// for functions with the prefer_pop_cleanup attribute.
+FunctionPass *createX86PreferPopCleanupPass();
+
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();
 
