@@ -1986,6 +1986,57 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
   for (auto *arg : args.filtered(OPT_alternatename))
     parseAlternateName(arg->getValue());
 
+  // Handle /comdat:noassociative
+  if (auto *arg = args.getLastArg(OPT_comdat)) {
+    StringRef value = arg->getValue();
+    if (value == "noassociative")
+      config->comdatNoAssociative = true;
+    else
+      Err(ctx) << "unknown /comdat value: " << value;
+  }
+
+  // Handle PE header override flags (for byte-exact binary reproduction)
+  if (auto *arg = args.getLastArg(OPT_linkerversion)) {
+    auto [major, minor] = StringRef(arg->getValue()).split('.');
+    uint32_t majorVal, minorVal = 0;
+    if (major.getAsInteger(0, majorVal))
+      Fatal(ctx) << "invalid /linkerversion: " << arg->getValue();
+    if (!minor.empty() && minor.getAsInteger(0, minorVal))
+      Fatal(ctx) << "invalid /linkerversion: " << arg->getValue();
+    config->majorLinkerVersion = static_cast<uint8_t>(majorVal);
+    config->minorLinkerVersion = static_cast<uint8_t>(minorVal);
+  }
+  if (auto *arg = args.getLastArg(OPT_sizeofcode)) {
+    uint32_t val;
+    if (StringRef(arg->getValue()).getAsInteger(0, val))
+      Fatal(ctx) << "invalid /sizeofcode: " << arg->getValue();
+    config->sizeOfCode = val;
+  }
+  if (auto *arg = args.getLastArg(OPT_sizeofinitdata)) {
+    uint32_t val;
+    if (StringRef(arg->getValue()).getAsInteger(0, val))
+      Fatal(ctx) << "invalid /sizeofinitdata: " << arg->getValue();
+    config->sizeOfInitializedData = val;
+  }
+  if (auto *arg = args.getLastArg(OPT_checksumvalue)) {
+    uint32_t val;
+    if (StringRef(arg->getValue()).getAsInteger(0, val))
+      Fatal(ctx) << "invalid /checksumvalue: " << arg->getValue();
+    config->checkSumValue = val;
+  }
+  if (auto *arg = args.getLastArg(OPT_dllcharacteristicsvalue)) {
+    uint32_t val;
+    if (StringRef(arg->getValue()).getAsInteger(0, val))
+      Fatal(ctx) << "invalid /dllcharacteristicsvalue: " << arg->getValue();
+    config->dllCharacteristicsOverride = static_cast<uint16_t>(val);
+  }
+  if (auto *arg = args.getLastArg(OPT_baseofdata)) {
+    uint32_t val;
+    if (StringRef(arg->getValue()).getAsInteger(0, val))
+      Fatal(ctx) << "invalid /baseofdata: " << arg->getValue();
+    config->baseOfData = val;
+  }
+
   // Handle /include
   for (auto *arg : args.filtered(OPT_incl))
     addUndefined(arg->getValue());

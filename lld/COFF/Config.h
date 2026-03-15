@@ -229,6 +229,18 @@ struct Configuration {
   // Used for /alternatename.
   std::map<StringRef, StringRef> alternateNames;
 
+  // Used for /comdat:noassociative.
+  bool comdatNoAssociative = false;
+
+  // PE header override fields (for byte-exact binary reproduction).
+  std::optional<uint8_t> majorLinkerVersion;
+  std::optional<uint8_t> minorLinkerVersion;
+  std::optional<uint32_t> sizeOfCode;
+  std::optional<uint32_t> sizeOfInitializedData;
+  std::optional<uint32_t> checkSumValue;
+  std::optional<uint16_t> dllCharacteristicsOverride;
+  std::optional<uint32_t> baseOfData;
+
   // Used for /order.
   llvm::StringMap<int> order;
 

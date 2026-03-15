@@ -32,6 +32,13 @@ def align   : P<"align", "Section alignment">;
 def aligncomm : P<"aligncomm", "Set common symbol alignment">;
 def alternatename : P<"alternatename", "Define weak alias">;
 def base    : P<"base", "Base address of the program">;
+def comdat  : P<"comdat", "Control COMDAT section handling">;
+def linkerversion : P<"linkerversion", "Override PE header linker version (e.g. 6.0)">;
+def sizeofcode : P<"sizeofcode", "Override PE header SizeOfCode field">;
+def sizeofinitdata : P<"sizeofinitdata", "Override PE header SizeOfInitializedData field">;
+def checksumvalue : P<"checksumvalue", "Override PE header CheckSum field">;
+def dllcharacteristicsvalue : P<"dllcharacteristicsvalue", "Override PE header DllCharacteristics field">;
+def baseofdata : P<"baseofdata", "Override PE header BaseOfData field (32-bit only)">;
 def color_diagnostics: Flag<["--"], "color-diagnostics">,
     HelpText<"Alias for --color-diagnostics=always">;
 def no_color_diagnostics: Flag<["--"], "no-color-diagnostics">,

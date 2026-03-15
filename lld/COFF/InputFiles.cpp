@@ -519,7 +519,8 @@ void ObjFile::initializeSymbols() {
   for (uint32_t i : pendingIndexes) {
     COFFSymbolRef sym = check(coffObj->getSymbol(i));
     if (const coff_aux_section_definition *def = sym.getSectionDefinition()) {
-      if (def->Selection == IMAGE_COMDAT_SELECT_ASSOCIATIVE)
+      if (def->Selection == IMAGE_COMDAT_SELECT_ASSOCIATIVE &&
+          !ctx.config.comdatNoAssociative)
         readAssociativeDefinition(sym, def);
       else if (ctx.config.mingw)
         maybeAssociateSEHForMingw(sym, def, prevailingSectionMap);

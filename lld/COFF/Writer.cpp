@@ -1754,8 +1754,8 @@ template <typename PEHeaderTy> void Writer::writeHeader() {
   // signature that fails to validate on Windows 7 (but is OK on 10).
   // Set it to 14.0, which is what VS2015 outputs, and which avoids
   // that problem.
-  pe->MajorLinkerVersion = 14;
-  pe->MinorLinkerVersion = 0;
+  pe->MajorLinkerVersion = config->majorLinkerVersion.value_or(14);
+  pe->MinorLinkerVersion = config->minorLinkerVersion.value_or(0);
 
   pe->ImageBase = config->imageBase;
   pe->SectionAlignment = config->align;
@@ -1802,12 +1802,21 @@ template <typename PEHeaderTy> void Writer::writeHeader() {
     pe->DLLCharacteristics |= IMAGE_DLL_CHARACTERISTICS_NO_SEH;
   if (config->terminalServerAware)
     pe->DLLCharacteristics |= IMAGE_DLL_CHARACTERISTICS_TERMINAL_SERVER_AWARE;
+  // bw1-decomp: override DllCharacteristics if explicitly set
+  if (config->dllCharacteristicsOverride.has_value())
+    pe->DLLCharacteristics = config->dllCharacteristicsOverride.value();
   pe->NumberOfRvaAndSize = numberOfDataDirectory;
   if (textSec->getVirtualSize()) {
     pe->BaseOfCode = textSec->getRVA();
-    pe->SizeOfCode = textSec->getRawSize();
+    pe->SizeOfCode = config->sizeOfCode.value_or(textSec->getRawSize());
   }
-  pe->SizeOfInitializedData = getSizeOfInitializedData();
+  pe->SizeOfInitializedData =
+      config->sizeOfInitializedData.value_or(getSizeOfInitializedData());
+  // bw1-decomp: override BaseOfData (32-bit PE only)
+  if constexpr (std::is_same_v<PEHeaderTy, pe32_header>) {
+    if (config->baseOfData.has_value())
+      pe->BaseOfData = config->baseOfData.value();
+  }
 
   // Write data directory
   assert(!ctx.config.is64() ||
