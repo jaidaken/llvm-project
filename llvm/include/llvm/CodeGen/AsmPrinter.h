@@ -875,12 +875,15 @@ private:
   /// This method emits prefix-like data before the current function.
   void emitFunctionPrefix(ArrayRef<const Constant *> Prefix);
 
+protected:
   /// Emit a blob of inline asm to the output streamer.
   void
   emitInlineAsm(StringRef Str, const MCSubtargetInfo &STI,
                 const MCTargetOptions &MCOptions,
                 const MDNode *LocMDNode = nullptr,
                 InlineAsm::AsmDialect AsmDialect = InlineAsm::AD_ATT) const;
+
+private:
 
   /// This method formats and emits the specified machine instruction that is an
   /// inline asm.

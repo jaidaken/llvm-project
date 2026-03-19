@@ -138,6 +138,22 @@ void X86AsmPrinter::emitFunctionBodyEnd() {
             .getValueAsString();
     OutStreamer->emitBytes(Bytes);
   }
+
+  // bw1-decomp: Emit trailing assembly after the function body (after ret).
+  // Like trailing_bytes but supports relocations by parsing through the MC
+  // assembler layer. Used for dead code after ret that references symbols
+  // (e.g., call dword ptr [__imp__FunctionName@4]).
+  if (MF->getFunction().hasFnAttribute("trailing_asm")) {
+    StringRef AsmStr =
+        MF->getFunction()
+            .getFnAttribute("trailing_asm")
+            .getValueAsString();
+    const MCSubtargetInfo &STI = MF->getSubtarget();
+    MCTargetOptions MCOptions;
+    MCOptions.AsmVerbose = false;
+    emitInlineAsm(AsmStr, STI, MCOptions, nullptr,
+                  InlineAsm::AD_Intel);
+  }
 }
 
 // bw1-decomp: Emit a scalar deleting destructor function body matching

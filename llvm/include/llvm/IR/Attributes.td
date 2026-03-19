@@ -501,6 +501,10 @@ def PreferSeteEcx : EnumAttr<"PreferSeteEcx", IntersectPreserve, [FnAttr]>;
 /// Suppress all callee-saved register saves and stack allocation.
 def NoCalleeSaves : EnumAttr<"NoCalleeSaves", IntersectPreserve, [FnAttr]>;
 
+/// Suppress prologue, epilogue, AND ret instruction. The inline asm
+/// provides its own terminator (jmp, ret, etc.). Implies NoCalleeSaves.
+def NoRet : EnumAttr<"NoRet", IntersectPreserve, [FnAttr]>;
+
 /// Fold fld+fmulp into memory-form fmul dword ptr [mem].
 def PreferFmulMem : EnumAttr<"PreferFmulMem", IntersectPreserve, [FnAttr]>;
 

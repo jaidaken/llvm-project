@@ -5004,6 +5004,20 @@ def TrailingBytes: InheritableAttr {
   let Documentation = [Undocumented];
 }
 
+def TrailingAsm: InheritableAttr {
+  let Spellings = [GNU<"trailing_asm">];
+  let Args = [StringArgument<"AsmString">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+}
+
+def RetCleanupOverride: InheritableAttr {
+  let Spellings = [GNU<"ret_cleanup_override">];
+  let Args = [IntArgument<"Bytes">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+}
+
 def NoTestSeteFold: InheritableAttr {
   let Spellings = [GNU<"no_test_sete_fold">];
   let Subjects = SubjectList<[Function]>;
@@ -5027,6 +5041,13 @@ def PreferSeteEcx: InheritableAttr {
 
 def NoCalleeSaves: InheritableAttr {
   let Spellings = [GNU<"no_callee_saves">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def NoRet: InheritableAttr {
+  let Spellings = [GNU<"no_ret">];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
   let SimpleHandler = 1;

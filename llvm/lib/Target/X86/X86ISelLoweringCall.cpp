@@ -1891,6 +1891,18 @@ SDValue X86TargetLowering::LowerFormalArguments(
 
   FuncInfo->setArgumentStackSize(StackSize);
 
+  // bw1-decomp: Override the ret cleanup size if specified.
+  // Forces the function's ret instruction to pop a specific number of bytes,
+  // regardless of the calling convention.
+  if (MF.getFunction().hasFnAttribute("ret_cleanup_override")) {
+    unsigned Override = 0;
+    MF.getFunction()
+        .getFnAttribute("ret_cleanup_override")
+        .getValueAsString()
+        .getAsInteger(10, Override);
+    FuncInfo->setBytesToPopOnReturn(Override);
+  }
+
   if (WinEHFuncInfo *EHInfo = MF.getWinEHFuncInfo()) {
     EHPersonality Personality = classifyEHPersonality(F.getPersonalityFn());
     if (Personality == EHPersonality::CoreCLR) {

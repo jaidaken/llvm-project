@@ -2910,6 +2910,21 @@ static void handleTrailingBytesAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   D->addAttr(::new (S.Context) TrailingBytesAttr(S.Context, AL, Str));
 }
 
+static void handleTrailingAsmAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  StringRef Str;
+  if (!S.checkStringLiteralArgumentAttr(AL, 0, Str))
+    return;
+  D->addAttr(::new (S.Context) TrailingAsmAttr(S.Context, AL, Str));
+}
+
+static void handleRetCleanupOverrideAttr(Sema &S, Decl *D,
+                                         const ParsedAttr &AL) {
+  uint32_t Bytes;
+  if (!S.checkUInt32Argument(AL, AL.getArgAsExpr(0), Bytes))
+    return;
+  D->addAttr(::new (S.Context) RetCleanupOverrideAttr(S.Context, AL, Bytes));
+}
+
 static void handleForcedCalleeSavesAttr(Sema &S, Decl *D,
                                         const ParsedAttr &AL) {
   StringRef Str;
@@ -6951,6 +6966,12 @@ ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D, const ParsedAttr &AL,
     break;
   case ParsedAttr::AT_TrailingBytes:
     handleTrailingBytesAttr(S, D, AL);
+    break;
+  case ParsedAttr::AT_TrailingAsm:
+    handleTrailingAsmAttr(S, D, AL);
+    break;
+  case ParsedAttr::AT_RetCleanupOverride:
+    handleRetCleanupOverrideAttr(S, D, AL);
     break;
   case ParsedAttr::AT_ForcedCalleeSaves:
     handleForcedCalleeSavesAttr(S, D, AL);

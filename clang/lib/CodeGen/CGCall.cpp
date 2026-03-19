@@ -2413,6 +2413,10 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::PreferSeteEcx);
     if (TargetDecl->hasAttr<NoCalleeSavesAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::NoCalleeSaves);
+    if (TargetDecl->hasAttr<NoRetAttr>()) {
+      FuncAttrs.addAttribute(llvm::Attribute::NoRet);
+      FuncAttrs.addAttribute(llvm::Attribute::NoCalleeSaves);
+    }
     if (TargetDecl->hasAttr<PreferFmulMemAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::PreferFmulMem);
     if (TargetDecl->hasAttr<PreferPopCleanupAttr>())
@@ -2421,6 +2425,11 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("forced_callee_saves", FCS->getRegisters());
     if (const auto *TB = TargetDecl->getAttr<TrailingBytesAttr>())
       FuncAttrs.addAttribute("trailing_bytes", TB->getBytes());
+    if (const auto *TA = TargetDecl->getAttr<TrailingAsmAttr>())
+      FuncAttrs.addAttribute("trailing_asm", TA->getAsmString());
+    if (const auto *RCO = TargetDecl->getAttr<RetCleanupOverrideAttr>())
+      FuncAttrs.addAttribute("ret_cleanup_override",
+                             std::to_string(RCO->getBytes()));
     if (const auto *Sdtor = TargetDecl->getAttr<Msvc6SdtorAttr>()) {
       FuncAttrs.addAttribute("msvc6_sdtor", Sdtor->getParams());
       FuncAttrs.addAttribute(llvm::Attribute::NoCalleeSaves);
