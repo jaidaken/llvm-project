@@ -77,6 +77,7 @@ bool X86PreferFcompFnstswPass::runOnMachineFunction(MachineFunction &MF) {
       MachineInstr &MI = *I;
 
       // Look for UCOM_FPPr (fucompp)
+      // Debug: print bail points for UCOM_FPPr matching
       if (MI.getOpcode() != X86::UCOM_FPPr) {
         ++I;
         continue;
@@ -118,9 +119,9 @@ bool X86PreferFcompFnstswPass::runOnMachineFunction(MachineFunction &MF) {
           FoundSahf = true;
           break;
         }
-        // Stop if something clobbers AX/AH (besides the expected COPY)
+        // Stop if something clobbers AX/AH (besides expected COPY/KILL)
         if (SahfI->definesRegister(X86::AX, /*TRI=*/nullptr) &&
-            !SahfI->isCopy())
+            !SahfI->isCopy() && !SahfI->isKill())
           break;
       }
 
@@ -135,9 +136,9 @@ bool X86PreferFcompFnstswPass::runOnMachineFunction(MachineFunction &MF) {
       while (CondI != E && CondI->getOpcode() != X86::SETCCr &&
              CondI->getOpcode() != X86::SETCCm &&
              CondI->getOpcode() != X86::JCC_1) {
-        // Stop if something clobbers EFLAGS
+        // Stop if something clobbers EFLAGS (but not COPY/KILL pseudo-ops)
         if (CondI->definesRegister(X86::EFLAGS, /*TRI=*/nullptr) &&
-            !CondI->isCopy())
+            !CondI->isCopy() && !CondI->isKill())
           break;
         ++CondI;
       }
@@ -255,13 +256,19 @@ bool X86PreferFcompFnstswPass::runOnMachineFunction(MachineFunction &MF) {
         if (NextJcc != E && NextJcc->getOpcode() == X86::JCC_1) {
           MachineBasicBlock *NextTarget = NextJcc->getOperand(0).getMBB();
           X86::CondCode NextCC = X86::getCondFromBranch(*NextJcc);
-          // Remove the parity-check companion JCC from eq/ne patterns:
-          // OEQ: JCC NE + JCC P  -> test ah,0x40; je (NE remapped to E)
-          // UNE: JCC NE + JCC P  -> test ah,0x40; je (NE remapped to E)
-          // Also handle reversed forms with COND_NP
-          if (NextTarget == Target &&
-              (NextCC == X86::COND_P || NextCC == X86::COND_NP)) {
-            NextJcc->eraseFromParent();
+          if (NextCC == X86::COND_P || NextCC == X86::COND_NP) {
+            if (NextTarget == Target) {
+              // OEQ: both JCCs target same block - just remove companion
+              NextJcc->eraseFromParent();
+            } else {
+              // UNE: companion JCC targets different block (the "equal" path).
+              // Replace conditional jnp/jp with unconditional jmp to handle
+              // the equal case without NaN checking (matches MSVC 6.0).
+              BuildMI(MBB, *NextJcc, NextJcc->getDebugLoc(),
+                      TII->get(X86::JMP_1))
+                  .addMBB(NextTarget);
+              NextJcc->eraseFromParent();
+            }
           }
         }
       }
