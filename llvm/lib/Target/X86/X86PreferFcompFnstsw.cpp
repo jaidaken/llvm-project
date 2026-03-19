@@ -188,9 +188,11 @@ bool X86PreferFcompFnstswPass::runOnMachineFunction(MachineFunction &MF) {
                 CondAlreadyReplaced = true;
               }
             }
-            // Could not match full eq/ne pattern, bail out
-            ++I;
-            continue;
+            if (!CondAlreadyReplaced) {
+              // Could not match full eq/ne pattern, bail out
+              ++I;
+              continue;
+            }
           }
         }
       } else if (CondI->getOpcode() == X86::JCC_1) {
