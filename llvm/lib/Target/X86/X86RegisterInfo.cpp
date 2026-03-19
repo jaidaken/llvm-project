@@ -1195,8 +1195,29 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
       if (is_contained(Order, X86::ESI) && !MRI->isReserved(X86::ESI))
         Hints.push_back(X86::ESI);
     } else {
-      // For other long-lived values, prefer EDI then EBX (MSVC 6.0 order)
-      // Only add hints if this is a callee-saved-class virtual register
+      // MSVC 6.0 scratch register order: EAX, EDX, ECX
+      // LLVM default order: EAX, ECX, EDX
+      // Only hint EDX for virtual registers that are destinations of MOVZX
+      // instructions. This avoids the overlap problem where expand_movzx
+      // can't fire because dest==base (movzx ecx, [ecx+N]).
+      // Don't hint EDX globally — that makes the compiler use EDX for
+      // unrelated values (like info pointer loads) that should stay in EAX.
+      bool isMovzxDest = false;
+      for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
+        const MachineInstr *MI = MO.getParent();
+        unsigned Opc = MI->getOpcode();
+        if (MO.isDef() && (Opc == X86::MOVZX32rm8 || Opc == X86::MOVZX32rm16 ||
+                           Opc == X86::MOVZX32rr8 || Opc == X86::MOVZX32rr16)) {
+          isMovzxDest = true;
+          break;
+        }
+      }
+      if (isMovzxDest) {
+        if (is_contained(Order, X86::EDX) && !MRI->isReserved(X86::EDX))
+          Hints.push_back(X86::EDX);
+      }
+
+      // For long-lived values, prefer EDI then EBX (MSVC 6.0 order)
       bool needsCalleeSaved = false;
       for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
         const MachineInstr *MI = MO.getParent();
