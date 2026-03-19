@@ -151,6 +151,20 @@ bool X86PreferFcompFnstswPass::runOnMachineFunction(MachineFunction &MF) {
       if (CondI->getOpcode() == X86::SETCCr) {
         OldCC = X86::getCondFromSETCC(*CondI);
         IsSetCC = true;
+
+        // Detect the eq/ne pattern: setnp+sete+and or setne+setne+or.
+        // LLVM uses two setccs for float equality because it needs to
+        // check both "ordered" (NP) and "equal" (E) separately.
+        // Skip these - they need a different transformation than simple
+        // condition remapping.
+        if (OldCC == X86::COND_NP || OldCC == X86::COND_P) {
+          auto NextCond = std::next(CondI);
+          if (NextCond != E && NextCond->getOpcode() == X86::SETCCr) {
+            // Two consecutive setccs = eq/ne pattern, skip
+            ++I;
+            continue;
+          }
+        }
       } else if (CondI->getOpcode() == X86::JCC_1) {
         OldCC = X86::getCondFromBranch(*CondI);
         IsJCC = true;
