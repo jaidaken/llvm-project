@@ -6089,6 +6089,13 @@ void CodeGenModule::EmitGlobalFunctionDefinition(GlobalDecl GD,
 
   CodeGenFunction(*this).GenerateCode(GD, Fn, FI);
 
+  // bw1-decomp: Re-apply function attributes from the definition's Decl.
+  // When the LLVM function was first created from a forward declaration
+  // (via GetOrCreateLLVMFunction), the declaration may not have had custom
+  // attributes (e.g., prefer_fmul_mem, msvc6_regalloc) that are only on
+  // the definition. Re-running SetLLVMFunctionAttributes here ensures the
+  // complete attribute set from the definition is applied.
+  SetLLVMFunctionAttributes(GD, FI, Fn, /*IsThunk=*/false);
   setNonAliasAttributes(GD, Fn);
   SetLLVMFunctionAttributesForDefinition(D, Fn);
 
