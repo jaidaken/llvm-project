@@ -187,23 +187,45 @@ bool X86PreferFcompFnstswPass::runOnMachineFunction(MachineFunction &MF) {
           .addReg(X86::AH)
           .addImm(Mask);
 
-      // Step 4: Update the condition code on the SETCCr/JCC_1
+      // Step 4: Replace SETCCr/JCC_1 with new condition code
+      // Must build a new instruction because the condition is baked into the
+      // opcode encoding (0x90+CC for SETcc, 0x80+CC for Jcc).
       if (IsSetCC) {
-        CondI->getOperand(CondI->getNumOperands() - 1).setImm(NewCC);
+        Register DstReg = CondI->getOperand(0).getReg();
+        auto NewSet = BuildMI(MBB, *CondI, CondI->getDebugLoc(),
+                              TII->get(X86::SETCCr), DstReg)
+                          .addImm(NewCC);
+        CondI->eraseFromParent();
+        CondI = NewSet.getInstr()->getIterator();
       } else if (IsJCC) {
-        CondI->getOperand(1).setImm(NewCC);
+        MachineBasicBlock *Target = CondI->getOperand(0).getMBB();
+        auto NewJcc = BuildMI(MBB, *CondI, CondI->getDebugLoc(),
+                              TII->get(X86::JCC_1))
+                          .addMBB(Target)
+                          .addImm(NewCC);
+        CondI->eraseFromParent();
+        CondI = NewJcc.getInstr()->getIterator();
       }
 
-      // Step 5: Remove everything between FNSTSW and the condition instruction
-      // (COPY, xor, SAHF, kill markers, etc.) EXCEPT the TEST we just inserted
+      // Step 5: Remove only SAHF and COPY/kill instructions related to AH
+      // extraction. Keep other instructions (like xor ecx,ecx for zero-init).
       {
         auto CleanI = std::next(MachineBasicBlock::iterator(FnstswI));
-        // Skip our new TEST8ri
-        if (CleanI != E && CleanI->getOpcode() == X86::TEST8ri)
-          CleanI = std::next(CleanI);
         while (CleanI != E && &*CleanI != &*CondI) {
           auto NextClean = std::next(CleanI);
-          CleanI->eraseFromParent();
+          // Remove: SAHF, COPY involving AH/AX, kill markers
+          if (CleanI->getOpcode() == X86::SAHF ||
+              CleanI->isKill() ||
+              (CleanI->isCopy() &&
+               (CleanI->getOperand(0).getReg() == X86::AH ||
+                CleanI->getOperand(0).getReg() == X86::AX ||
+                (CleanI->getNumOperands() > 1 &&
+                 CleanI->getOperand(1).isReg() &&
+                 (CleanI->getOperand(1).getReg() == X86::AH ||
+                  CleanI->getOperand(1).getReg() == X86::AX))))) {
+            CleanI->eraseFromParent();
+          }
+          // Keep everything else (xor zeroing, etc.)
           CleanI = NextClean;
         }
       }
