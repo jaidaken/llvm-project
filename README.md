@@ -1,69 +1,118 @@
-# LLVM Fork for Black & White Decompilation
+# LLVM Fork for MSVC 6.0 Byte-Exact Decompilation
 
-Custom LLVM fork for the [bw1-decomp](https://github.com/jaidaken/bw1-decomp) project. We are doing a byte-exact decompilation of `runblack.exe` v1.20 from Lionhead Studios' Black & White (2001).
+Custom LLVM fork that makes modern Clang produce byte-identical machine code to Microsoft Visual C++ 6.0 (1998). Built for the [bw1-decomp](https://github.com/jaidaken/bw1-decomp) project (Black & White, 2001) but applicable to any MSVC 6.0 era game or application.
 
 ## Why a fork?
 
-The original game was compiled with MSVC 6.0 (1998). MSVC 6.0 generates different instruction encodings than modern Clang/LLVM. For byte-exact decompilation, every compiled function must produce identical machine code to the original binary: same opcodes, same register choices, same instruction ordering.
+MSVC 6.0 and modern Clang/LLVM make systematically different code generation choices: different instruction encodings, register allocation preferences, prologue/epilogue sequences, and opcode variants. For byte-exact decompilation, every compiled function must produce identical machine code.
 
-LLVM's code generator makes different choices than MSVC 6.0. This fork adds per-function GNU attributes that override specific code generation decisions to match MSVC's output. Functions without these attributes compile normally.
+This fork adds **26 per-function GNU attributes** that override specific code generation decisions to match MSVC 6.0's output. Functions without these attributes compile normally — the fork is fully backward-compatible.
 
 ## What this fork adds
 
-### Instruction encoding passes
+### Instruction Encoding Passes
 
 Post-register-allocation passes in `addPreEmitPass()`, activated per-function via `__attribute__`:
 
 | Attribute | Transformation | Why |
 |-----------|---------------|-----|
-| `expand_movzx` | `movzx eax, [mem]` to `xor eax,eax; mov al,[mem]` | MSVC zero-extends with XOR+MOV |
-| `prefer_xor8` | `xor eax,eax` (0x31) to `xor al,al` (0x32) | MSVC uses 8-bit XOR encoding |
-| `suppress_fp_imm` | `fldz`/`fld1` to `fld [const_pool]` | MSVC loads FP constants from memory |
-| `prefer_or_minus_one` | `mov eax,-1` (5 bytes) to `or eax,-1` (3 bytes) | MSVC prefers shorter encoding |
-| `prefer_inc_dec_byte` | `movzx+add+mov` to `inc byte ptr [mem]` | MSVC uses memory-form inc/dec |
-| `no_test_sete_fold` | `test+sete` to `not; shr; and` | Prevents bit-test pattern folding |
-| `prefer_neg_sbb` | `xor+test+sete` to `neg; sbb; inc` | MSVC boolean NOT pattern |
-| `prefer_sete_ecx` | `sete al; movzx eax,al` to `sete cl; movzx eax,cl` | MSVC routes sete through ECX |
-| `prefer_fmul_mem` | `fld+fmulp` to `fmul dword ptr [mem]` | MSVC uses memory-form FPU multiply |
-| `prefer_pop_cleanup` | `add esp,4` (3 bytes) to `pop ecx` (1 byte) | MSVC cdecl stack cleanup |
+| `expand_movzx` | `movzx eax, [mem]` → `xor eax,eax; mov al,[mem]` | MSVC zero-extends with XOR+MOV |
+| `prefer_xor8` | `xor eax,eax` (0x31) → `xor al,al` (0x32) | MSVC uses 8-bit XOR encoding |
+| `suppress_fp_imm` | `fldz`/`fld1` → `fld [const_pool]` | MSVC loads FP constants from memory |
+| `prefer_or_minus_one` | `mov eax,-1` (5 bytes) → `or eax,-1` (3 bytes) | MSVC prefers shorter encoding |
+| `prefer_inc_dec_byte` | `movzx+add+mov` → `inc byte ptr [mem]` | MSVC uses memory-form inc/dec |
+| `no_test_sete_fold` | `test+sete` → `not; shr; and` | Prevents bit-test pattern folding |
+| `prefer_neg_sbb` | `xor+test+sete` → `neg; sbb; inc` | MSVC boolean NOT pattern |
+| `prefer_sete_ecx` | `sete al; movzx eax,al` → `sete cl; movzx eax,cl` | MSVC routes sete through ECX |
+| `prefer_fmul_mem` | `fld+fmulp` → `fmul dword ptr [mem]` | MSVC uses memory-form FPU multiply |
+| `prefer_pop_cleanup` | `add esp,4` (3 bytes) → `pop ecx` (1 byte) | MSVC cdecl stack cleanup |
 | `no_bool_mask` | Suppresses `and al,1` for bool returns | MSVC doesn't mask bool to 0/1 |
-| `trailing_bytes("...")` | Emits raw bytes after `ret` | Dead code / junk bytes after return |
+| `msvc6_regalloc` | Reversed reg-reg encoding + ESI preference for `this` | MSVC uses reversed ModR/M and prefers ESI for `this` pointer |
 
-### Frame lowering attributes
+### Reversed Register-Register Encoding
+
+MSVC 6.0 systematically uses the reversed encoding for reg-reg operations (e.g., `add eax, ecx` encoded as opcode `03` instead of `01`). The `msvc6_regalloc` attribute activates a pass that converts all reg-reg arithmetic to their `_REV` variants:
+
+- `ADD32rr` → `ADD32rr_REV`, `OR32rr` → `OR32rr_REV`, `SUB32rr` → `SUB32rr_REV`
+- `CMP32rr` → `CMP32rr_REV`, `AND32rr` → `AND32rr_REV`, `XOR32rr` → `XOR32rr_REV`
+- `SBB32rr` → `SBB32rr_REV`, `ADC32rr` → `ADC32rr_REV`
+- Also handles 8-bit and 16-bit variants
+
+Additionally provides register allocation hints: `this` pointer (from ECX in `__fastcall`) prefers ESI, matching MSVC 6.0's 73% ESI preference.
+
+### Frame Lowering Attributes
 
 Control prologue/epilogue generation to match MSVC's calling convention behavior:
 
 | Attribute | What it does |
 |-----------|-------------|
-| `no_callee_saves` | Suppresses all callee-saved register saves, frame pointer, and stack allocation. Parameters stay at calling-convention ESP offsets. |
+| `no_callee_saves` | Suppresses all callee-saved register saves, frame pointer, and stack allocation. Used on 765 functions. |
 | `forced_callee_saves("ecx,esi,edi")` | Forces exactly the specified registers to be pushed/popped in the specified order. No frame pointer or `sub esp`. |
+| `no_ret` | Suppresses the compiler-generated `ret` instruction entirely. For functions that end with `jmp` (vtable dispatch, CRT stubs, tail calls). Used on 62 functions. |
+| `ret_cleanup_override(N)` | Forces the `ret N` value regardless of calling convention. For functions where MSVC's stack cleanup differs from the C signature. |
 
-### Other modifications
+### Code Emission Attributes
 
-- **DSO-local fix**: Forces all symbols to resolve locally (no `.refptr` indirection). The decomp is a single statically-linked executable.
-- **`MOV32rr_REV` / `XOR32rr_REV`**: Alternative instruction encodings matching MSVC's opcode choices.
-- **LLD/PDB fixes**: Patches for linking against old PDB 2.0 type servers and MSVC 6.0 RTTI layout.
+| Attribute | What it does |
+|-----------|-------------|
+| `trailing_bytes("...")` | Emits raw bytes after function body (dead code without relocations) |
+| `trailing_asm("...")` | Emits assembly after function body via MC layer (handles relocations for import calls, symbol references) |
+| `msvc6_sdtor("dtor,delete,size,vtable")` | Emits complete MSVC 6.0 scalar deleting destructor body |
+
+### Other Modifications
+
+- **`MOV32rr_REV` / `XOR32rr_REV`**: Per-function attributes for reversed MOV/XOR register copy encoding
+- **`.no_pad` directive**: Sets `IMAGE_SCN_TYPE_NO_PAD` COFF section flag
+- **LLD PE header flags**: `--linkerversion`, `--sizeofcode`, `--dllcharacteristicsvalue`, `--baseofdata` for PE header matching
+- **DSO-local fix**: Forces all symbols to resolve locally (no `.refptr` indirection)
 
 ## Usage
 
 ```c
-// Per-function attributes, only affect annotated functions
-__attribute__((expand_movzx, prefer_xor8, no_bool_mask))
+// Simple encoding fix — 1 attribute makes compiler output match MSVC 6.0
+__attribute__((prefer_or_minus_one))
+uint32_t __fastcall StandAnimation(struct Object* this) {
+    return 0xFFFFFFFF;  // Generates: or eax, -1; ret (4 bytes, not mov eax,-1; ret = 6 bytes)
+}
+
+// Bitfield accessor with MSVC's zero-extension pattern
+__attribute__((expand_movzx))
 bool32_t __fastcall IsFlag(struct Thing* this) {
     return (*(uint8_t*)((char*)this + 0xB6) >> 3) & 1;
 }
 
-__attribute__((trailing_bytes("\x90\xcc")))
-void __fastcall SetValue(struct Obj* this, const void* edx, int val) {
-    this->value = val;
+// Suppress prologue/epilogue — inline asm controls everything except ret
+__attribute__((no_callee_saves))
+int __fastcall GetValue(struct Obj* this, const void* edx, int param) {
+    int result;
+    asm volatile (
+        "mov eax, [ecx + 0x28]\n\t"
+        "mov ecx, [esp + 0x04]\n\t"
+        "mov eax, [eax + ecx*4 + 0x210]"
+        : "=a"(result) : "c"(this) : "edx", "memory"
+    );
+    return result;  // Compiler generates ret 4 from calling convention
 }
 
-__attribute__((forced_callee_saves("ecx,esi,edi")))
-void __fastcall ComplexFunc(struct Obj* this, const void* edx, float param) {
-    // Compiler pushes ECX, ESI, EDI in that exact order
-    // ESP offsets for 'param' account for the 3 pushes automatically
-    struct Abode* a = (struct Abode*)this;
-    a->life += param;
+// Dead code with relocations after ret
+__attribute__((no_callee_saves, trailing_asm("call dword ptr [__imp__DirectDrawCreate@4]")))
+void __fastcall SetScale(struct Obj* this, const void* edx, float scale) {
+    asm volatile (
+        "mov eax, [esp + 0x04]\n\t"
+        "mov [ecx + 0x50], eax"
+        :: "c"(this) : "eax", "edx", "memory"
+    );
+}
+
+// Vtable dispatch that ends with jmp (no ret)
+__attribute__((no_ret))
+bool __fastcall IsReachable(struct Object* this) {
+    asm volatile (
+        "mov eax, [ecx]\n\t"
+        "jmp dword ptr [eax + 0x2c]"
+        :: "c"(this) : "eax", "edx", "memory"
+    );
+    __builtin_unreachable();
 }
 ```
 
@@ -71,9 +120,23 @@ void __fastcall ComplexFunc(struct Obj* this, const void* edx, float param) {
 
 ```bash
 cmake -Bbuild -Sllvm -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  -DLLVM_TARGETS_TO_BUILD=X86 -DLLVM_ENABLE_PROJECTS="lld;clang"
-ninja -C build clang lld llvm-objcopy llvm-strip llvm-rc llvm-ar
+  -DLLVM_TARGETS_TO_BUILD=X86 -DLLVM_ENABLE_PROJECTS="lld;clang" \
+  -DCMAKE_INSTALL_PREFIX=./install
+ninja -C build install
 ```
+
+## Applicability Beyond Black & White
+
+This fork is a **generic MSVC 6.0 codegen compatibility layer**. The attributes address systematic differences between MSVC 6.0 and modern Clang/LLVM that apply to any MSVC 6.0 compiled binary:
+
+- Reversed reg-reg encoding (`.s` suffix pattern)
+- Zero-extension via XOR+MOV (not MOVZX)
+- Boolean return without masking
+- FP constant loading from memory
+- Callee-saved register order (ESI, EDI, EBX)
+- Stack cleanup patterns
+
+Any game or application from the MSVC 5.0/6.0 era (roughly 1996-2003) could potentially reuse this fork for byte-exact decompilation.
 
 ## Releases
 

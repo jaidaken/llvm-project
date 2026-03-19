@@ -125,6 +125,10 @@ FunctionPass *createX86ExpandPseudoPass();
 /// XOR32rr_REV + MOV8rm/MOV16rm for functions with the expand_movzx attribute.
 FunctionPass *createX86ExpandMovzxPass();
 
+/// Return a Machine IR pass that converts reg-reg arithmetic ops to their
+/// reversed encoding variants (e.g., ADD32rr -> ADD32rr_REV) for MSVC 6.0.
+FunctionPass *createX86ReversedOpsPass();
+
 /// Return a Machine IR pass that converts XOR32rr/XOR32rr_REV self-xor
 /// zeroing idioms to XOR8rr/XOR8rr_REV for functions with prefer_xor8.
 FunctionPass *createX86PreferXOR8Pass();
