@@ -137,6 +137,10 @@ FunctionPass *createX86PreferAddMemPass();
 /// fcomp/fnstsw/test ah,N matching MSVC 6.0 FPU comparison patterns.
 FunctionPass *createX86PreferFcompFnstswPass();
 
+/// Return a Machine IR pass that rewrites fld+fstp pairs to integer
+/// mov+mov for float parameters (MSVC 6.0 treats floats as raw 32-bit).
+FunctionPass *createX86PreferIntegerFloatMovePass();
+
 /// Return a Machine IR pass that converts XOR32rr/XOR32rr_REV self-xor
 /// zeroing idioms to XOR8rr/XOR8rr_REV for functions with prefer_xor8.
 FunctionPass *createX86PreferXOR8Pass();
@@ -172,6 +176,10 @@ FunctionPass *createX86PreferFmulMemPass();
 /// Return a Machine IR pass that replaces add esp, 4 with pop ecx
 /// for functions with the prefer_pop_cleanup attribute.
 FunctionPass *createX86PreferPopCleanupPass();
+
+/// Return a Machine IR pass that converts MOVZX32rr16 to MOV32rr + AND32ri
+/// 0xFFFF for functions with the prefer_and_mask attribute.
+FunctionPass *createX86PreferAndMaskPass();
 
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();

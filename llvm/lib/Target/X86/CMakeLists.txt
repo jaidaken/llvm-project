@@ -44,6 +44,7 @@ set(sources
   X86ReversedOps.cpp
   X86PreferAddMem.cpp
   X86PreferFcompFnstsw.cpp
+  X86PreferIntegerFloatMove.cpp
   X86PreferXOR8.cpp
   X86PreferIncDecByte.cpp
   X86SuppressFPImm.cpp
@@ -53,6 +54,7 @@ set(sources
   X86PreferSeteEcx.cpp
   X86PreferFmulMem.cpp
   X86PreferPopCleanup.cpp
+  X86PreferAndMask.cpp
   X86FastISel.cpp
   X86FixupBWInsts.cpp
   X86FixupLEAs.cpp
