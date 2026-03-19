@@ -147,20 +147,47 @@ bool X86PreferFcompFnstswPass::runOnMachineFunction(MachineFunction &MF) {
       X86::CondCode OldCC = X86::COND_INVALID;
       bool IsSetCC = false;
       bool IsJCC = false;
+      bool CondAlreadyReplaced = false;
+      uint8_t Mask = 0;
+      X86::CondCode NewCC = X86::COND_INVALID;
 
       if (CondI->getOpcode() == X86::SETCCr) {
         OldCC = X86::getCondFromSETCC(*CondI);
         IsSetCC = true;
 
-        // Detect the eq/ne pattern: setnp+sete+and or setne+setne+or.
-        // LLVM uses two setccs for float equality because it needs to
-        // check both "ordered" (NP) and "equal" (E) separately.
-        // Skip these - they need a different transformation than simple
-        // condition remapping.
+        // Handle the eq/ne pattern: setnp+sete+and (OEQ) or setp+setne+or (UNE).
+        // LLVM uses two setccs for float equality. Collapse into test ah, 0x40.
         if (OldCC == X86::COND_NP || OldCC == X86::COND_P) {
           auto NextCond = std::next(CondI);
           if (NextCond != E && NextCond->getOpcode() == X86::SETCCr) {
-            // Two consecutive setccs = eq/ne pattern, skip
+            X86::CondCode SecondCC = X86::getCondFromSETCC(*NextCond);
+            bool IsOEQ = (OldCC == X86::COND_NP && SecondCC == X86::COND_E);
+            bool IsUNE = (OldCC == X86::COND_P && SecondCC == X86::COND_NE);
+            if (IsOEQ || IsUNE) {
+              // Find the combining AND8rr (OEQ) or OR8rr (UNE)
+              auto CombI = std::next(NextCond);
+              while (CombI != E && CombI->getOpcode() != X86::AND8rr &&
+                     CombI->getOpcode() != X86::OR8rr)
+                ++CombI;
+              if (CombI != E) {
+                Register CombDstReg = CombI->getOperand(0).getReg();
+                X86::CondCode ResultCC = IsOEQ ? X86::COND_NE : X86::COND_E;
+                // Replace with single setcc using the combine result register
+                auto NewSet = BuildMI(MBB, *CondI, CondI->getDebugLoc(),
+                                      TII->get(X86::SETCCr), CombDstReg)
+                                  .addImm(ResultCC);
+                // Remove first setcc, second setcc, and combine instruction
+                CombI->eraseFromParent();
+                NextCond->eraseFromParent();
+                CondI->eraseFromParent();
+                CondI = NewSet.getInstr()->getIterator();
+                Mask = 0x40;
+                NewCC = ResultCC;
+                IsSetCC = true;
+                CondAlreadyReplaced = true;
+              }
+            }
+            // Could not match full eq/ne pattern, bail out
             ++I;
             continue;
           }
@@ -172,10 +199,10 @@ bool X86PreferFcompFnstswPass::runOnMachineFunction(MachineFunction &MF) {
 
       if (OldCC == X86::COND_INVALID) { ++I; continue; }
 
-      // Map the condition to test ah mask
-      uint8_t Mask;
-      X86::CondCode NewCC;
-      if (!mapCondToTestAH(OldCC, Mask, NewCC)) { ++I; continue; }
+      // Map the condition to test ah mask (unless eq/ne already set it)
+      if (!CondAlreadyReplaced) {
+        if (!mapCondToTestAH(OldCC, Mask, NewCC)) { ++I; continue; }
+      }
 
       DebugLoc DL = MI.getDebugLoc();
 
@@ -203,9 +230,10 @@ bool X86PreferFcompFnstswPass::runOnMachineFunction(MachineFunction &MF) {
           .addImm(Mask);
 
       // Step 4: Replace SETCCr/JCC_1 with new condition code
-      // Must build a new instruction because the condition is baked into the
-      // opcode encoding (0x90+CC for SETcc, 0x80+CC for Jcc).
-      if (IsSetCC) {
+      // (skip if eq/ne pattern already handled this above)
+      if (CondAlreadyReplaced) {
+        // eq/ne setcc pattern already replaced CondI above
+      } else if (IsSetCC) {
         Register DstReg = CondI->getOperand(0).getReg();
         auto NewSet = BuildMI(MBB, *CondI, CondI->getDebugLoc(),
                               TII->get(X86::SETCCr), DstReg)
@@ -218,8 +246,24 @@ bool X86PreferFcompFnstswPass::runOnMachineFunction(MachineFunction &MF) {
                               TII->get(X86::JCC_1))
                           .addMBB(Target)
                           .addImm(NewCC);
+        // Check for companion JCC in eq/ne two-JCC pattern:
+        // JCC_1 target, COND_NE + JCC_1 target, COND_P (OEQ)
+        // JCC_1 target, COND_NE + JCC_1 target, COND_P (UNE)
+        auto NextJcc = std::next(MachineBasicBlock::iterator(CondI));
         CondI->eraseFromParent();
         CondI = NewJcc.getInstr()->getIterator();
+        if (NextJcc != E && NextJcc->getOpcode() == X86::JCC_1) {
+          MachineBasicBlock *NextTarget = NextJcc->getOperand(0).getMBB();
+          X86::CondCode NextCC = X86::getCondFromBranch(*NextJcc);
+          // Remove the parity-check companion JCC from eq/ne patterns:
+          // OEQ: JCC NE + JCC P  -> test ah,0x40; je (NE remapped to E)
+          // UNE: JCC NE + JCC P  -> test ah,0x40; je (NE remapped to E)
+          // Also handle reversed forms with COND_NP
+          if (NextTarget == Target &&
+              (NextCC == X86::COND_P || NextCC == X86::COND_NP)) {
+            NextJcc->eraseFromParent();
+          }
+        }
       }
 
       // Step 5: Remove only SAHF and COPY/kill instructions related to AH

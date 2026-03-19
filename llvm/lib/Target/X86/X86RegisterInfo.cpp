@@ -1178,7 +1178,8 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
   // (copied from ECX at function entry) to prefer ESI. Other callee-saved
   // values prefer EDI, then EBX, matching MSVC 6.0's allocation order.
   if (MF.getFunction().hasFnAttribute(llvm::Attribute::Msvc6RegAlloc) &&
-      TRI.isGeneralPurposeRegisterClass(&RC)) {
+      TRI.isGeneralPurposeRegisterClass(&RC) &&
+      VirtReg.isVirtual()) {
     // Find if VirtReg is copied from ECX at function entry
     bool isCopyFromECX = false;
     for (auto &MO : MRI->def_operands(VirtReg)) {
