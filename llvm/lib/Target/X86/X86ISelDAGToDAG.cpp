@@ -665,7 +665,13 @@ bool X86DAGToDAGISel::isMaskZeroExtended(SDNode *N) const {
 
 bool
 X86DAGToDAGISel::IsProfitableToFold(SDValue N, SDNode *U, SDNode *Root) const {
-  return false;
+  // bw1-decomp: Disable memory folding for MSVC 6.0 matched functions.
+  // This prevents test reg,reg -> cmp [mem],0 folding among other things.
+  // Originally was a global `return false` (from openblack fork) but that
+  // caused crashes in PeepholeOptimizer for indirect calls with FPU returns.
+  // Now gated per-function to avoid the crash.
+  if (MF->getFunction().hasFnAttribute(Attribute::Msvc6RegAlloc))
+    return false;
   if (OptLevel == CodeGenOptLevel::None)
     return false;
 
