@@ -42,6 +42,7 @@ set(sources
   X86ExpandPseudo.cpp
   X86ExpandMovzx.cpp
   X86ReversedOps.cpp
+  X86PreferAddMem.cpp
   X86PreferXOR8.cpp
   X86PreferIncDecByte.cpp
   X86SuppressFPImm.cpp
