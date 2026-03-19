@@ -505,6 +505,9 @@ def NoCalleeSaves : EnumAttr<"NoCalleeSaves", IntersectPreserve, [FnAttr]>;
 /// provides its own terminator (jmp, ret, etc.). Implies NoCalleeSaves.
 def NoRet : EnumAttr<"NoRet", IntersectPreserve, [FnAttr]>;
 
+/// Use MSVC 6.0 register allocation preferences (ESI for this, then EDI, EBX).
+def Msvc6RegAlloc : EnumAttr<"Msvc6RegAlloc", IntersectPreserve, [FnAttr]>;
+
 /// Fold fld+fmulp into memory-form fmul dword ptr [mem].
 def PreferFmulMem : EnumAttr<"PreferFmulMem", IntersectPreserve, [FnAttr]>;
 

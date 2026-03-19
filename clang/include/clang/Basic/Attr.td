@@ -5053,6 +5053,13 @@ def NoRet: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def Msvc6RegAlloc: InheritableAttr {
+  let Spellings = [GNU<"msvc6_regalloc">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def ForcedCalleeSaves: InheritableAttr {
   let Spellings = [GNU<"forced_callee_saves">];
   let Args = [StringArgument<"Registers">];

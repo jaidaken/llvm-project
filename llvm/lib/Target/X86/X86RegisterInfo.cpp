@@ -1173,6 +1173,51 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
   if (!VRM)
     return BaseImplRetVal;
 
+  // bw1-decomp: MSVC 6.0 register allocation preferences.
+  // When msvc6_regalloc is set, hint the this-pointer virtual register
+  // (copied from ECX at function entry) to prefer ESI. Other callee-saved
+  // values prefer EDI, then EBX, matching MSVC 6.0's allocation order.
+  if (MF.getFunction().hasFnAttribute(llvm::Attribute::Msvc6RegAlloc) &&
+      TRI.isGeneralPurposeRegisterClass(&RC)) {
+    // Find if VirtReg is copied from ECX at function entry
+    bool isCopyFromECX = false;
+    for (auto &MO : MRI->def_operands(VirtReg)) {
+      const MachineInstr *MI = MO.getParent();
+      if (MI->isCopy() && MI->getOperand(1).isReg() &&
+          MI->getOperand(1).getReg() == X86::ECX) {
+        isCopyFromECX = true;
+        break;
+      }
+    }
+
+    if (isCopyFromECX) {
+      // This is the this-pointer: strongly prefer ESI
+      if (is_contained(Order, X86::ESI) && !MRI->isReserved(X86::ESI))
+        Hints.push_back(X86::ESI);
+    } else {
+      // For other long-lived values, prefer EDI then EBX (MSVC 6.0 order)
+      // Only add hints if this is a callee-saved-class virtual register
+      bool needsCalleeSaved = false;
+      for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
+        const MachineInstr *MI = MO.getParent();
+        if (MI->isCopy() && MO.isDef()) {
+          Register SrcReg = MI->getOperand(1).getReg();
+          if (SrcReg == X86::EAX || SrcReg == X86::EDX) {
+            // This vreg preserves a call result -> needs callee-saved
+            needsCalleeSaved = true;
+            break;
+          }
+        }
+      }
+      if (needsCalleeSaved) {
+        if (is_contained(Order, X86::EDI) && !MRI->isReserved(X86::EDI))
+          Hints.push_back(X86::EDI);
+        if (is_contained(Order, X86::EBX) && !MRI->isReserved(X86::EBX))
+          Hints.push_back(X86::EBX);
+      }
+    }
+  }
+
   if (ID != X86::TILERegClassID && ID != X86::TILEPAIRRegClassID) {
     if (DisableRegAllocNDDHints || !ST.hasNDD() ||
         !TRI.isGeneralPurposeRegisterClass(&RC))

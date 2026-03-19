@@ -2417,6 +2417,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::NoRet);
       FuncAttrs.addAttribute(llvm::Attribute::NoCalleeSaves);
     }
+    if (TargetDecl->hasAttr<Msvc6RegAllocAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::Msvc6RegAlloc);
     if (TargetDecl->hasAttr<PreferFmulMemAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::PreferFmulMem);
     if (TargetDecl->hasAttr<PreferPopCleanupAttr>())
