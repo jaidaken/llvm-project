@@ -613,6 +613,7 @@ void X86PassConfig::addPreEmitPass() {
   // - PreferNegSbb must run before PreferXOR8 (it matches XOR32rr self-xor
   //   that PreferXOR8 would downsize to XOR8rr).
   // - ExpandMovzx runs last (it may create XOR+MOV patterns).
+  addPass(createX86PreferFcompFnstswPass());
   addPass(createX86NoTestSeteFoldPass());
   addPass(createX86PreferNegSbbPass());
   addPass(createX86PreferSeteEcxPass());

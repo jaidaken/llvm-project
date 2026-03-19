@@ -133,6 +133,10 @@ FunctionPass *createX86ReversedOpsPass();
 /// arithmetic (e.g., mov r,[m]; add r,s; mov [m],r -> add [m],s).
 FunctionPass *createX86PreferAddMemPass();
 
+/// Return a Machine IR pass that rewrites fucompp/fnstsw/sahf/setcc to
+/// fcomp/fnstsw/test ah,N matching MSVC 6.0 FPU comparison patterns.
+FunctionPass *createX86PreferFcompFnstswPass();
+
 /// Return a Machine IR pass that converts XOR32rr/XOR32rr_REV self-xor
 /// zeroing idioms to XOR8rr/XOR8rr_REV for functions with prefer_xor8.
 FunctionPass *createX86PreferXOR8Pass();
