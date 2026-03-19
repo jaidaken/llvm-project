@@ -85,8 +85,10 @@ bool X86PreferFcompFnstswPass::runOnMachineFunction(MachineFunction &MF) {
       // Check if preceded by LD_F32m or LD_F64m (the second fld)
       if (I == MBB.begin()) { ++I; continue; }
       auto PrevI = std::prev(I);
-      // Skip fxch if present (compiler sometimes inserts it)
+      // Skip and track fxch if present (compiler inserts it for gt/ge)
+      MachineInstr *FxchToRemove = nullptr;
       if (PrevI->getOpcode() == X86::XCH_F) {
+        FxchToRemove = &*PrevI;
         if (PrevI == MBB.begin()) { ++I; continue; }
         PrevI = std::prev(PrevI);
       }
@@ -173,10 +175,9 @@ bool X86PreferFcompFnstswPass::runOnMachineFunction(MachineFunction &MF) {
         FcompMI.add(PrevI->getOperand(i));
       FcompMI.cloneMemRefs(*PrevI);
 
-      // Remove fxch if it was between fld and fucompp
-      auto CheckFxch = std::next(MachineBasicBlock::iterator(FcompMI.getInstr()));
-      if (CheckFxch != E && CheckFxch->getOpcode() == X86::XCH_F)
-        CheckFxch->eraseFromParent();
+      // Remove fxch that was between fld and fucompp (tracked earlier)
+      if (FxchToRemove)
+        FxchToRemove->eraseFromParent();
 
       // Step 2: Keep FNSTSW16r (fnstsw ax) as-is
 
