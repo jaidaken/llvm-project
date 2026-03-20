@@ -665,9 +665,20 @@ bool X86DAGToDAGISel::isMaskZeroExtended(SDNode *N) const {
 
 bool
 X86DAGToDAGISel::IsProfitableToFold(SDValue N, SDNode *U, SDNode *Root) const {
-  // bw1-decomp: Disable ISel folding globally to match MSVC 6.0 codegen.
+  // bw1-decomp: Disable load folding to match MSVC 6.0 codegen.
   // This prevents test reg,reg -> cmp [mem],0 and similar transformations.
-  return false;
+  // EXCEPTION: Allow load folding when the Root is a call-like node,
+  // because blocking it causes the DAG scheduler to crash on indirect calls
+  // (SmallVector overflow in SUnit::ComputeHeight).
+  if (N.getOpcode() == ISD::LOAD) {
+    if (Root) {
+      unsigned RootOpc = Root->getOpcode();
+      if (RootOpc == X86ISD::CALL || RootOpc == X86ISD::TC_RETURN ||
+          RootOpc == X86ISD::TLSCALL || RootOpc == X86ISD::NT_CALL)
+        return true; // allow fold into call targets
+    }
+    return false;
+  }
   if (OptLevel == CodeGenOptLevel::None)
     return false;
 
