@@ -215,6 +215,59 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
   EntryBlock->insert(std::next(AfterPushEDI), LoadAdler);
   adjustEspDisp(*LoadAdler, -8);
 
+  // Step 5b: Move s1/s2 setup from NotNullBlock to EntryBlock.
+  // MSVC does: load adler -> mov ecx,edi -> and ecx,0xffff -> shr edi,10
+  // all BEFORE the null test. Our code has these in NotNullBlock.
+  // Find and move: MOV32rr ECX,EDI; AND32ri ECX,0xFFFF; SHR32ri EDI,0x10
+  {
+    SmallVector<MachineInstr *, 4> ToMove;
+    for (MachineInstr &MI : *NotNullBlock) {
+      // mov ecx, edi
+      if (MI.getOpcode() == X86::MOV32rr &&
+          MI.getOperand(0).getReg() == X86::ECX &&
+          MI.getOperand(1).getReg() == X86::EDI)
+        ToMove.push_back(&MI);
+      // and ecx, 0xffff
+      if (MI.getOpcode() == X86::AND32ri &&
+          MI.getOperand(0).getReg() == X86::ECX &&
+          MI.getOperand(2).getImm() == 0xFFFF)
+        ToMove.push_back(&MI);
+      // shr edi, 0x10
+      if (MI.getOpcode() == X86::SHR32ri &&
+          MI.getOperand(0).getReg() == X86::EDI &&
+          MI.getOperand(2).getImm() == 0x10)
+        ToMove.push_back(&MI);
+    }
+    // Insert AFTER the adler load in the entry block.
+    // Order must be: adler load -> mov ecx,edi -> and -> shr -> test -> jne
+    // The TEST instruction is already in the entry block as a terminator.
+    // Move the s1/s2 setup before the TEST, and ensure TEST comes after shr.
+    auto AfterAdler = std::next(MachineBasicBlock::iterator(LoadAdler));
+    for (MachineInstr *MI : ToMove) {
+      MI->removeFromParent();
+      EntryBlock->insert(AfterAdler, MI);
+      AfterAdler = std::next(MachineBasicBlock::iterator(MI));
+    }
+
+    // Now move TEST ESI,ESI to right after SHR EDI,10 (the last setup instr)
+    MachineInstr *TestMI = nullptr;
+    for (MachineInstr &MI : *EntryBlock) {
+      if (MI.getOpcode() == X86::TEST32rr &&
+          MI.getOperand(0).getReg() == X86::ESI &&
+          MI.getOperand(1).getReg() == X86::ESI) {
+        TestMI = &MI;
+        break;
+      }
+    }
+    if (TestMI && !ToMove.empty()) {
+      // Move TEST to right after the last s1/s2 setup instruction
+      MachineInstr *LastSetup = ToMove.back();
+      TestMI->removeFromParent();
+      EntryBlock->insert(
+          std::next(MachineBasicBlock::iterator(LastSetup)), TestMI);
+    }
+  }
+
   // Step 6: Adjust ALL remaining ESP-relative refs in the entry block
   // that come AFTER the adler load. These currently expect 4 pushes but
   // only 2 have happened. Delta = -8 (2 fewer pushes).

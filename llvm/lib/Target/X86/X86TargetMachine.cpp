@@ -620,6 +620,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86HoistLenSubPass());
   addPass(createX86StripNopPaddingPass());
   addPass(createX86PreferSignedJccPass());
+  addPass(createX86Msvc6RestructurePass());
   addPass(createX86PreferIntegerFloatMovePass());
   addPass(createX86PreferFcompFnstswPass());
   addPass(createX86NoTestSeteFoldPass());
@@ -635,7 +636,6 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86PreferAndMaskPass());
   addPass(createX86ReversedOpsPass());
   addPass(createX86ExpandMovzxPass());
-  addPass(createX86Msvc6RestructurePass());
   addPass(createX86DiscriminateMemOpsPass());
   addPass(createX86InsertPrefetchPass());
   addPass(createX86InsertX87waitPass());
