@@ -3801,6 +3801,14 @@ bool X86AsmParser::processInstruction(MCInst &Inst, const OperandVector &Ops) {
     case X86::MOV32o32a: NewOpc = X86::MOV32mr; break;
     default: break;
     }
+    // Also expand sign-extended imm8 to full immediate (ri8 → ri)
+    // to prevent the assembler from using shorter imm8 encoding.
+    if (!NewOpc) {
+      unsigned LongOpc = X86::getOpcodeForLongImmediateForm(Opc);
+      if (LongOpc != Opc) {
+        Inst.setOpcode(LongOpc);
+      }
+    }
     if (NewOpc) {
       // Short form operands: [0]=address, [1]=segment
       MCOperand Addr = Inst.getOperand(0);
