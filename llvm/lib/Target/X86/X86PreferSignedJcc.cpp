@@ -42,6 +42,11 @@ public:
 char X86PreferSignedJccPass::ID = 0;
 
 bool X86PreferSignedJccPass::runOnMachineFunction(MachineFunction &MF) {
+  // Disabled: Clang already generates correct signed/unsigned JCC from
+  // C source types. int comparisons get jl/jge, unsigned get jb/jbe/ja.
+  // Converting breaks MSVC matching where unsigned comparisons need jb/jbe/ja.
+  return false;
+
   if (!MF.getFunction().hasFnAttribute(Attribute::PreferDiv)) {
     return false;
   }

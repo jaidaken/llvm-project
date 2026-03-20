@@ -549,24 +549,36 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
   // Find the tail setup block - it's the target of the "jl skip_do16" branch
   // from the outer loop (cmp eax, 0x10; jl tail_setup).
   // Search OuterLoopBlock for a JCC with COND_L and get its target.
+  // Find the tail setup block - target of the LAST JCC in OuterLoopBlock.
+  // The last JCC is "cmp eax, 0x10; jl/jb skip_do16" (skip to tail setup).
+  // The first JCC is "cmp ebx, 0x15b0; jb" (NMAX clamp - short branch).
   MachineBasicBlock *TailSetupBlock = nullptr;
   if (OuterLoopBlock) {
     for (MachineInstr &MI : *OuterLoopBlock) {
-      if ((MI.getOpcode() == X86::JCC_1 || MI.getOpcode() == X86::JCC_4) &&
-          MI.getOperand(1).getImm() == X86::COND_L) {
-        TailSetupBlock = MI.getOperand(0).getMBB();
-        break;
+      if ((MI.getOpcode() == X86::JCC_1 || MI.getOpcode() == X86::JCC_4)) {
+        int64_t CC = MI.getOperand(1).getImm();
+        if (CC == X86::COND_L || CC == X86::COND_B)
+          TailSetupBlock = MI.getOperand(0).getMBB(); // Keep overwriting - last one wins
       }
     }
   }
+
+  errs() << "  DO16=" << (DO16Block ? (int)DO16Block->getNumber() : -1)
+         << " TailTest=" << (TailTestBlock ? (int)TailTestBlock->getNumber() : -1)
+         << " TailSetup=" << (TailSetupBlock ? (int)TailSetupBlock->getNumber() : -1)
+         << " TailLoop=" << (TailLoopBlock ? (int)TailLoopBlock->getNumber() : -1)
+         << " Modulo=" << (ModuloBlock ? (int)ModuloBlock->getNumber() : -1) << "\n";
 
   // Reorder: DO16 -> TailTest -> TailSetup -> TailLoop -> Modulo -> Epilogue
   if (DO16Block && TailLoopBlock && ModuloBlock) {
     if (TailTestBlock && TailTestBlock != DO16Block)
       TailTestBlock->moveAfter(DO16Block);
     MachineBasicBlock *afterTest = TailTestBlock ? TailTestBlock : DO16Block;
-    if (TailSetupBlock)
+    if (TailSetupBlock) {
+      errs() << "  Moving TailSetup bb." << TailSetupBlock->getNumber()
+             << " after bb." << afterTest->getNumber() << "\n";
       TailSetupBlock->moveAfter(afterTest);
+    }
     MachineBasicBlock *afterSetup = TailSetupBlock ? TailSetupBlock : afterTest;
     if (TailLoopBlock != afterSetup)
       TailLoopBlock->moveAfter(afterSetup);
@@ -672,7 +684,8 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
   // ===== Phase 10d: Remove dead blocks (no predecessors) =====
   SmallVector<MachineBasicBlock *, 4> DeadBlocks;
   for (MachineBasicBlock &MBB : MF) {
-    if (&MBB == EntryBlock)
+    if (&MBB == EntryBlock || &MBB == TailSetupBlock ||
+        &MBB == TailTestBlock || &MBB == TailLoopBlock)
       continue;
     if (MBB.pred_empty())
       DeadBlocks.push_back(&MBB);
@@ -684,7 +697,27 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
     MBB->eraseFromParent();
   }
 
-  // ===== Phase 11: Clean up blocks between NotNull and OuterLoop =====
+  // ===== Phase 11a: Move any blocks after Epilogue to before TailLoop =====
+  // After all reordering, some blocks might end up after the epilogue's ret.
+  // These are tail setup blocks that should be before the tail loop.
+  if (TailLoopBlock) {
+    SmallVector<MachineBasicBlock *, 4> AfterEpilogue;
+    bool pastEpilogue = false;
+    for (MachineBasicBlock &MBB : MF) {
+      if (pastEpilogue && !MBB.empty())
+        AfterEpilogue.push_back(&MBB);
+      if (&MBB == EpilogueBlock)
+        pastEpilogue = true;
+    }
+    errs() << "  Blocks after epilogue: " << AfterEpilogue.size() << "\n";
+    for (MachineBasicBlock *MBB : AfterEpilogue) {
+      errs() << "    Moving bb." << MBB->getNumber() << " before TailLoop bb."
+             << TailLoopBlock->getNumber() << "\n";
+      MBB->moveBefore(TailLoopBlock);
+    }
+  }
+
+  // ===== Phase 11b: Clean up blocks between NotNull and OuterLoop =====
   // Remove all instructions from any block between NotNull and OuterLoop
   // that only contains JMPs or add esi,ebx. Don't delete the block itself
   // (to avoid dangling references), just empty it so it becomes a
