@@ -665,10 +665,9 @@ bool X86DAGToDAGISel::isMaskZeroExtended(SDNode *N) const {
 
 bool
 X86DAGToDAGISel::IsProfitableToFold(SDValue N, SDNode *U, SDNode *Root) const {
-  // bw1-decomp: The test reg,reg -> cmp [mem],0 fold is already blocked
-  // in foldMemoryOperandImpl (X86InstrInfo.cpp, TEST32rr case returns nullptr).
-  // No need to block folding at the ISel level. The global IsProfitableToFold
-  // disable (from openblack fork) caused PeepholeOptimizer crashes.
+  // bw1-decomp: Disable ISel folding globally to match MSVC 6.0 codegen.
+  // This prevents test reg,reg -> cmp [mem],0 and similar transformations.
+  return false;
   if (OptLevel == CodeGenOptLevel::None)
     return false;
 
