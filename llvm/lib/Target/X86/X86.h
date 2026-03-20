@@ -205,6 +205,10 @@ FunctionPass *createX86InterleaveS2UpdatePass();
 /// and eliminates stack spills.
 FunctionPass *createX86HoistLenSubPass();
 
+/// Return a Machine IR pass that removes NOP alignment padding from
+/// functions with msvc6_regalloc attribute.
+FunctionPass *createX86StripNopPaddingPass();
+
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();
 
