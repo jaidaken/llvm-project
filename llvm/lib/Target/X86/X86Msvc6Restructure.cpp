@@ -698,6 +698,84 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
     }
   }
 
+  // ===== Phase 9z: Fix tail loop registers =====
+  // MSVC tail: xor edx; mov dl,[esi]; add ecx,edx; inc esi; add edi,ecx; dec eax; jne
+  // Ours:     xor eax; mov al,[ebp]; inc ebp; add eax,ecx; add ecx,edi; dec edx; jne
+  // Need to swap: EAX<->EDX, ESI<->EBP in the tail loop body and setup.
+  if (TailLoopBlock) {
+    // Also swap in the tail setup block (mov ebp,esi; mov edx,ebx -> mov esi,keep; mov eax,ebx)
+    // Actually, the tail setup might be in a block before TailLoopBlock.
+    // Swap in ALL blocks between TailTestBlock and ModuloBlock.
+    MachineBasicBlock *Start = TailTestBlock ? TailTestBlock : (DO16Block ? DO16Block->getNextNode() : nullptr);
+    if (Start) {
+      // Skip the tail test block (Start), swap only in setup and loop blocks
+      for (MachineBasicBlock *MBB = Start->getNextNode(); MBB && MBB != ModuloBlock; MBB = MBB->getNextNode()) {
+        for (MachineInstr &MI : *MBB) {
+          for (MachineOperand &MO : MI.operands()) {
+            if (!MO.isReg()) continue;
+            Register R = MO.getReg();
+            // Swap EAX <-> EDX
+            if (R == X86::EAX) MO.setReg(X86::EDX);
+            else if (R == X86::EDX) MO.setReg(X86::EAX);
+            else if (R == X86::AL) MO.setReg(X86::DL);
+            else if (R == X86::DL) MO.setReg(X86::AL);
+            // Swap ESI <-> EBP
+            else if (R == X86::ESI) MO.setReg(X86::EBP);
+            else if (R == X86::EBP) MO.setReg(X86::ESI);
+          }
+        }
+      }
+    }
+  }
+
+  // ===== Phase 10a0: Fix tail test branch direction =====
+  // MSVC: "test eax; je modulo" (skip tail on zero). Ours: "test eax; jne tail".
+  // Invert the condition and change target to skip OVER the tail loop
+  // when remainder==0, landing on the modulo block.
+  if (TailTestBlock && ModuloBlock) {
+    for (MachineInstr &MI : *TailTestBlock) {
+      if (MI.isConditionalBranch() && MI.getOperand(1).isImm()) {
+        int64_t CC = MI.getOperand(1).getImm();
+        if (CC == X86::COND_NE) {
+          // Change jne tail -> je modulo
+          MI.getOperand(0).setMBB(ModuloBlock);
+          MI.getOperand(1).setImm(X86::COND_E);
+          // Update successors
+          break;
+        }
+      }
+    }
+  }
+
+  // ===== Phase 10a1: Fix tail test register (EBX -> EAX) =====
+  // After HoistLenSub changed the trip count to use EAX for the remainder,
+  // the tail test still checks EBX. Change to test EAX (the actual remainder).
+  // Also invert the condition: MSVC uses "test eax; je modulo" (skip tail if
+  // remainder==0), our code has "test ebx; jne tail" (go to tail if nonzero).
+  // After changing register to EAX, also change condition from jne to je
+  // and swap the target to the modulo block.
+  if (DO16Block) {
+    // Find the TEST after DO16 (in TailTestBlock or DO16Block's successor)
+    MachineBasicBlock *TestBlock = nullptr;
+    for (MachineBasicBlock *Succ : DO16Block->successors()) {
+      if (Succ != DO16Block) {
+        TestBlock = Succ;
+        break;
+      }
+    }
+    if (TestBlock) {
+      for (MachineInstr &MI : *TestBlock) {
+        if (MI.getOpcode() == X86::TEST32rr &&
+            MI.getOperand(0).getReg() == X86::EBX &&
+            MI.getOperand(1).getReg() == X86::EBX) {
+          MI.getOperand(0).setReg(X86::EAX);
+          MI.getOperand(1).setReg(X86::EAX);
+          break;
+        }
+      }
+    }
+  }
+
   // ===== Phase 10a2: Remove redundant MOV chain (mov ebx,eax; mov ebp,ebx -> mov ebp,eax) =====
   for (MachineBasicBlock &MBB : MF) {
     for (auto I = MBB.begin(), E = MBB.end(); I != E; ++I) {

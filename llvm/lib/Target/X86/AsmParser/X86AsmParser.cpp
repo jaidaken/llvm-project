@@ -3850,17 +3850,26 @@ bool X86AsmParser::processInstruction(MCInst &Inst, const OperandVector &Ops) {
   // the unresolved value is 0. But a symbol needs a 4-byte relocation,
   // so expand ri8 back to ri (imm32), then optimize to the EAX short
   // form (e.g., CMP32ri → CMP32i32 = opcode 3D, 5 bytes).
-  if (!ForcedNoOptimize) {
+  {
     unsigned Opc = Inst.getOpcode();
     unsigned LongOpc = X86::getOpcodeForLongImmediateForm(Opc);
     if (LongOpc != Opc) {
-      // Check if the immediate operand is a symbol expression
       MCOperand &ImmOp = Inst.getOperand(Inst.getNumOperands() - 1);
-      if (ImmOp.isExpr()) {
+      // Expand ri8 → ri for symbol expressions (need 4-byte relocation)
+      // OR when {nooptimize} is set (preserve original long encoding)
+      if (ImmOp.isExpr() || ForcedNoOptimize) {
         Inst.setOpcode(LongOpc);
       }
     }
-    X86::optimizeToFixedRegisterOrShortImmediateForm(Inst);
+    // Run EAX fixed-register optimization (ri → i32, e.g., ADD32ri → ADD32i32).
+    // When {nooptimize}: only do the fixed-register part (keeps long immediate).
+    // Without {nooptimize}: also do short-immediate optimization (ri → ri8).
+    if (ForcedNoOptimize) {
+      // Only convert to EAX short form, don't re-shorten the immediate
+      X86::optimizeToFixedRegisterForm(Inst);
+    } else {
+      X86::optimizeToFixedRegisterOrShortImmediateForm(Inst);
+    }
   }
 
   auto replaceWithCCMPCTEST = [&](unsigned Opcode) -> bool {
