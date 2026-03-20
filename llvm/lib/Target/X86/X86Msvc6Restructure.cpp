@@ -299,21 +299,27 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
   BuildMI(*NotNullBlock, NotNullBlock->begin(), DL, TII->get(X86::PUSH32r))
       .addReg(X86::EBX, RegState::Kill);
 
-  // Step 8: Adjust len load offset. Currently [esp+0x1c] (4 pushes).
-  // After 3 pushes: [esp+0x18]. Delta = -4.
-  adjustEspDisp(*LoadLen, -4);
-
-  // Step 9: Adjust all other ESP refs in the not-null block that come
-  // AFTER push EBX. They expect 4 pushes but only 3 have happened. Delta = -4.
-  bool pastPushEBX = false;
-  for (MachineInstr &MI : *NotNullBlock) {
-    if (MI.getOpcode() == X86::PUSH32r && MI.getOperand(0).getReg() == X86::EBX) {
-      pastPushEBX = true;
-      continue;
+  // Step 8: Set len load offset to [esp+0x18].
+  // After push esi + push edi + push ebx (3 pushes = 12 bytes):
+  // [esp+0] = ebx, [esp+4] = edi, [esp+8] = esi, [esp+c] = ret,
+  // [esp+10] = adler, [esp+14] = buf, [esp+18] = len
+  // Force the correct offset regardless of what prior passes set.
+  {
+    int MemOpIdx = X86II::getMemoryOperandNo(LoadLen->getDesc().TSFlags);
+    if (MemOpIdx >= 0) {
+      MemOpIdx += X86II::getOperandBias(LoadLen->getDesc());
+      unsigned DispIdx = MemOpIdx + X86::AddrDisp;
+      if (DispIdx < LoadLen->getNumOperands())
+        LoadLen->getOperand(DispIdx).setImm(0x18);
     }
-    if (pastPushEBX)
-      adjustEspDisp(MI, -4);
   }
+
+  // Step 9: No further ESP adjustment needed in not-null block.
+  // After push EBX, 3 pushes have happened. HoistLenSub already adjusted
+  // offsets assuming 4 pushes minus sub-esp-8. With split prologue removing
+  // one push from before this point, the net effect is +4 for the len load
+  // (handled above). Other ESP refs in this block are for the len check
+  // which doesn't use ESP-relative addressing.
 
   // Step 10: Find where to insert push EBP. It goes before the outer loop.
   // The outer loop starts with CMP32ri EBX, 0x15b0.
