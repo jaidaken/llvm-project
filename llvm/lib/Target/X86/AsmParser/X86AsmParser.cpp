@@ -4513,11 +4513,19 @@ bool X86AsmParser::matchAndEmitIntelInstruction(
   if (Mnemonic == "push" && Operands.size() == 2) {
     auto *X86Op = static_cast<X86Operand *>(Operands[1].get());
     if (X86Op->isImm()) {
-      // If it's not a constant fall through and let remainder take care of it.
       const auto *CE = dyn_cast<MCConstantExpr>(X86Op->getImm());
       unsigned Size = getPointerWidth();
+      bool ShouldMatch = false;
       if (CE &&
           (isIntN(Size, CE->getValue()) || isUIntN(Size, CE->getValue()))) {
+        ShouldMatch = true;
+      } else if (!CE) {
+        // Non-constant expression (e.g., push offset symbol).
+        // Force pointer-sized immediate to select the correct PUSH variant
+        // (PUSH32i in 32-bit mode, not PUSH16i8).
+        ShouldMatch = true;
+      }
+      if (ShouldMatch) {
         SmallString<16> Tmp;
         Tmp += Base;
         Tmp += (is64BitMode())

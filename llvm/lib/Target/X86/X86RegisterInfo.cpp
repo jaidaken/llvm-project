@@ -1290,12 +1290,26 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
       }
 
       if (isMultiBB && !isMovzxDest) {
-        static const MCPhysReg Msvc6CalleeSaved[] = {
-            X86::ESI, X86::EDI, X86::EBX};
-        for (MCPhysReg Reg : Msvc6CalleeSaved) {
-          if (is_contained(Order, Reg) && !MRI->isReserved(Reg) &&
-              !is_contained(Hints, Reg))
-            Hints.push_back(Reg);
+        // Memory-base vregs already got ESI above. For other multi-BB vregs,
+        // only hint EDI and EBX (not ESI) to avoid competing with pointer
+        // vregs for ESI. This matches MSVC 6.0's pattern: pointers get ESI,
+        // other long-lived values get EDI then EBX.
+        if (!isUsedAsMemBase) {
+          if (is_contained(Order, X86::EDI) && !MRI->isReserved(X86::EDI) &&
+              !is_contained(Hints, X86::EDI))
+            Hints.push_back(X86::EDI);
+          if (is_contained(Order, X86::EBX) && !MRI->isReserved(X86::EBX) &&
+              !is_contained(Hints, X86::EBX))
+            Hints.push_back(X86::EBX);
+        } else {
+          // Memory-base vregs get full callee-saved fallback
+          static const MCPhysReg Msvc6CalleeSaved[] = {
+              X86::ESI, X86::EDI, X86::EBX};
+          for (MCPhysReg Reg : Msvc6CalleeSaved) {
+            if (is_contained(Order, Reg) && !MRI->isReserved(Reg) &&
+                !is_contained(Hints, Reg))
+              Hints.push_back(Reg);
+          }
         }
       }
     }
