@@ -737,6 +737,29 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
     }
   }
 
+  // ===== Phase 9z3: Fix tail loop instruction order =====
+  // MSVC: xor edx; mov dl,[esi]; add ecx,edx; inc esi; add edi,ecx; dec eax; jne
+  // Ours:  xor edx; mov dl,[esi]; inc esi; add ecx,edx; add edi,ecx; dec eax; jne
+  // Need to swap "inc esi" and "add ecx, edx" in TailLoopBlock.
+  if (TailLoopBlock) {
+    for (auto I = TailLoopBlock->begin(); I != TailLoopBlock->end(); ++I) {
+      auto Next = std::next(I);
+      if (Next == TailLoopBlock->end()) break;
+      // Match: INC32r ESI followed by ADD32rr ECX, ECX, EDX
+      if (I->getOpcode() == X86::INC32r &&
+          I->getOperand(0).getReg() == X86::ESI &&
+          (Next->getOpcode() == X86::ADD32rr || Next->getOpcode() == X86::ADD32rr_REV) &&
+          Next->getOperand(0).getReg() == X86::ECX) {
+        // Swap: move ADD before INC
+        MachineInstr *IncMI = &*I;
+        MachineInstr *AddMI = &*Next;
+        IncMI->removeFromParent();
+        TailLoopBlock->insert(std::next(MachineBasicBlock::iterator(AddMI)), IncMI);
+        break;
+      }
+    }
+  }
+
   // Also remove identity MOVs (src == dest) anywhere
   for (MachineBasicBlock &MBB : MF) {
     SmallVector<MachineInstr *, 4> ToRemove;
