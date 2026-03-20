@@ -546,13 +546,30 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
     }
   }
 
-  // Reorder: DO16 -> TailTest -> TailLoop -> Modulo -> LoopExit -> Epilogue
+  // Find the tail setup block - it's the target of the "jl skip_do16" branch
+  // from the outer loop (cmp eax, 0x10; jl tail_setup).
+  // Search OuterLoopBlock for a JCC with COND_L and get its target.
+  MachineBasicBlock *TailSetupBlock = nullptr;
+  if (OuterLoopBlock) {
+    for (MachineInstr &MI : *OuterLoopBlock) {
+      if ((MI.getOpcode() == X86::JCC_1 || MI.getOpcode() == X86::JCC_4) &&
+          MI.getOperand(1).getImm() == X86::COND_L) {
+        TailSetupBlock = MI.getOperand(0).getMBB();
+        break;
+      }
+    }
+  }
+
+  // Reorder: DO16 -> TailTest -> TailSetup -> TailLoop -> Modulo -> Epilogue
   if (DO16Block && TailLoopBlock && ModuloBlock) {
     if (TailTestBlock && TailTestBlock != DO16Block)
       TailTestBlock->moveAfter(DO16Block);
-    MachineBasicBlock *afterTail = TailTestBlock ? TailTestBlock : DO16Block;
-    if (TailLoopBlock != afterTail)
-      TailLoopBlock->moveAfter(afterTail);
+    MachineBasicBlock *afterTest = TailTestBlock ? TailTestBlock : DO16Block;
+    if (TailSetupBlock)
+      TailSetupBlock->moveAfter(afterTest);
+    MachineBasicBlock *afterSetup = TailSetupBlock ? TailSetupBlock : afterTest;
+    if (TailLoopBlock != afterSetup)
+      TailLoopBlock->moveAfter(afterSetup);
     ModuloBlock->moveAfter(TailLoopBlock);
     EpilogueBlock->moveAfter(ModuloBlock);
   }
