@@ -699,33 +699,55 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
   }
 
   // ===== Phase 9z: Fix tail loop registers =====
-  // MSVC tail: xor edx; mov dl,[esi]; add ecx,edx; inc esi; add edi,ecx; dec eax; jne
-  // Ours:     xor eax; mov al,[ebp]; inc ebp; add eax,ecx; add ecx,edi; dec edx; jne
-  // Need to swap: EAX<->EDX, ESI<->EBP in the tail loop body and setup.
+  // Swap EAX<->EDX and ESI<->EBP in ONLY the TailLoopBlock.
+  // The tail setup blocks that precede it will become identity MOVs
+  // that get removed by Phase 9z2.
   if (TailLoopBlock) {
-    // Also swap in the tail setup block (mov ebp,esi; mov edx,ebx -> mov esi,keep; mov eax,ebx)
-    // Actually, the tail setup might be in a block before TailLoopBlock.
-    // Swap in ALL blocks between TailTestBlock and ModuloBlock.
-    MachineBasicBlock *Start = TailTestBlock ? TailTestBlock : (DO16Block ? DO16Block->getNextNode() : nullptr);
-    if (Start) {
-      // Skip the tail test block (Start), swap only in setup and loop blocks
-      for (MachineBasicBlock *MBB = Start->getNextNode(); MBB && MBB != ModuloBlock; MBB = MBB->getNextNode()) {
-        for (MachineInstr &MI : *MBB) {
-          for (MachineOperand &MO : MI.operands()) {
-            if (!MO.isReg()) continue;
-            Register R = MO.getReg();
-            // Swap EAX <-> EDX
-            if (R == X86::EAX) MO.setReg(X86::EDX);
-            else if (R == X86::EDX) MO.setReg(X86::EAX);
-            else if (R == X86::AL) MO.setReg(X86::DL);
-            else if (R == X86::DL) MO.setReg(X86::AL);
-            // Swap ESI <-> EBP
-            else if (R == X86::ESI) MO.setReg(X86::EBP);
-            else if (R == X86::EBP) MO.setReg(X86::ESI);
-          }
-        }
+    for (MachineInstr &MI : *TailLoopBlock) {
+      for (MachineOperand &MO : MI.operands()) {
+        if (!MO.isReg()) continue;
+        Register R = MO.getReg();
+        if (R == X86::EAX) MO.setReg(X86::EDX);
+        else if (R == X86::EDX) MO.setReg(X86::EAX);
+        else if (R == X86::AL) MO.setReg(X86::DL);
+        else if (R == X86::DL) MO.setReg(X86::AL);
+        else if (R == X86::ESI) MO.setReg(X86::EBP);
+        else if (R == X86::EBP) MO.setReg(X86::ESI);
       }
     }
+  }
+
+  // ===== Phase 9z2: Remove tail setup MOVs =====
+  // The tail setup block has 3 MOV instructions that copy registers
+  // around for the tail loop. After the tail loop register swap, the
+  // loop uses ESI (buf) and EAX (remainder) directly - both already
+  // contain the correct values. Remove the setup MOVs.
+  // Find blocks between TailTestBlock and TailLoopBlock that only
+  // contain MOV32rr/MOV32rr_REV instructions, and remove those MOVs.
+  if (TailTestBlock && TailLoopBlock) {
+    for (MachineBasicBlock *MBB = TailTestBlock->getNextNode();
+         MBB && MBB != TailLoopBlock; MBB = MBB->getNextNode()) {
+      SmallVector<MachineInstr *, 8> ToRemove;
+      for (MachineInstr &MI : *MBB) {
+        if (MI.getOpcode() == X86::MOV32rr || MI.getOpcode() == X86::MOV32rr_REV)
+          ToRemove.push_back(&MI);
+      }
+      for (MachineInstr *MI : ToRemove)
+        MI->eraseFromParent();
+    }
+  }
+
+  // Also remove identity MOVs (src == dest) anywhere
+  for (MachineBasicBlock &MBB : MF) {
+    SmallVector<MachineInstr *, 4> ToRemove;
+    for (MachineInstr &MI : MBB) {
+      if ((MI.getOpcode() == X86::MOV32rr || MI.getOpcode() == X86::MOV32rr_REV) &&
+          MI.getNumOperands() >= 2 &&
+          MI.getOperand(0).getReg() == MI.getOperand(1).getReg())
+        ToRemove.push_back(&MI);
+    }
+    for (MachineInstr *MI : ToRemove)
+      MI->eraseFromParent();
   }
 
   // ===== Phase 10a0: Fix tail test branch direction =====
