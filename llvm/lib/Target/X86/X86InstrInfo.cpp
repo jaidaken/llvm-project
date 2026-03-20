@@ -3169,6 +3169,17 @@ bool X86InstrInfo::hasCommutePreference(MachineInstr &MI, bool &Commute) const {
     }
   }
 
+  // bw1-decomp: When msvc6_regalloc is active, suppress commuting of ADD32rr.
+  // MSVC 6.0 always accumulates into the first operand (add ecx, edx), keeping
+  // loop accumulators stable in one register. LLVM's TwoAddressPass commutes
+  // based on liveness heuristics, causing accumulators to ping-pong between
+  // registers across loop iterations.
+  const MachineFunction *MF = MI.getParent()->getParent();
+  if (MF->getFunction().hasFnAttribute(llvm::Attribute::Msvc6RegAlloc)) {
+    Commute = false;
+    return true;
+  }
+
   return false;
 }
 
