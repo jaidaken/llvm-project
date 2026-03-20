@@ -1222,11 +1222,18 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
         }
       }
 
-      // Insert ESI at position 0 for memory-base vregs. This must be the
-      // FIRST hint so the greedy allocator tries ESI before anything else.
+      // For memory-base vregs, use HardHints to FORCE ESI.
+      // HardHints means the allocator will ONLY consider hinted registers.
+      // If ESI is occupied, the allocator evicts the occupant. This is the
+      // only way to override the greedy allocator's spill weight priority.
+      // Applied to ALL memory-base vregs (not just multi-BB) because at -O2
+      // the main loop vreg may be within a single large basic block.
+      bool useHardHints = false;
       if (isUsedAsMemBase) {
-        if (is_contained(Order, X86::ESI) && !MRI->isReserved(X86::ESI))
+        if (is_contained(Order, X86::ESI) && !MRI->isReserved(X86::ESI)) {
           Hints.insert(Hints.begin(), X86::ESI);
+          useHardHints = true;
+        }
       }
 
       // MSVC 6.0 scratch register order: EAX, EDX, ECX
@@ -1307,6 +1314,11 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
             Hints.push_back(Reg);
         }
       }
+
+      // Return true for HardHints: allocator will ONLY consider hinted
+      // registers for this vreg, evicting occupants if necessary.
+      if (useHardHints)
+        return true;
     }
   }
 
