@@ -201,6 +201,10 @@ FunctionPass *createX86PreferEarlyBufAdvancePass();
 /// iterations to match MSVC 6.0's software-pipelined pattern.
 FunctionPass *createX86InterleaveS2UpdatePass();
 
+/// Return a Machine IR pass that hoists len -= k before the DO16 loop
+/// and eliminates stack spills.
+FunctionPass *createX86HoistLenSubPass();
+
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();
 
