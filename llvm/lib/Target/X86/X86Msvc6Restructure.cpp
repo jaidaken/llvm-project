@@ -484,22 +484,23 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
     }
   }
 
-  // 7b: Remove spurious POP EBP, JMP to epilogue, and OR EDI,ECX from NotNullBlock
-  SmallVector<MachineInstr *, 4> ToRemoveNN;
-  for (MachineInstr &MI : *NotNullBlock) {
-    if (MI.getOpcode() == X86::POP32r &&
-        MI.getOperand(0).getReg() == X86::EBP)
-      ToRemoveNN.push_back(&MI);
-    if (MI.getOpcode() == X86::JMP_1 &&
-        MI.getOperand(0).getMBB() == EpilogueBlock)
-      ToRemoveNN.push_back(&MI);
-    if (MI.getOpcode() == X86::OR32rr &&
-        MI.getOperand(0).getReg() == X86::EDI &&
-        MI.getOperand(2).getReg() == X86::ECX)
-      ToRemoveNN.push_back(&MI);
+  // 7b: Remove everything after the JCC in NotNullBlock.
+  // After jbe, any remaining instructions (pop ebp, jmp, or edi,ecx) are
+  // from the old len==0 fallthrough path that's now handled by jbe.
+  {
+    bool pastJCC = false;
+    SmallVector<MachineInstr *, 8> ToRemoveNN;
+    for (MachineInstr &MI : *NotNullBlock) {
+      if (pastJCC) {
+        ToRemoveNN.push_back(&MI);
+        continue;
+      }
+      if (MI.getOpcode() == X86::JCC_4 || MI.getOpcode() == X86::JCC_1)
+        pastJCC = true;
+    }
+    for (MachineInstr *MI : ToRemoveNN)
+      MI->eraseFromParent();
   }
-  for (MachineInstr *MI : ToRemoveNN)
-    MI->eraseFromParent();
 
   // 7d: Create loop exit block with pop ebp between modulo and epilogue
   MachineBasicBlock *LoopExitBlock = MF.CreateMachineBasicBlock();
@@ -584,34 +585,46 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
     }
   }
 
-  // ===== Phase 10: Remove spurious add esi, ebx block =====
+  // ===== Phase 10: Final cleanup - remove ALL remaining JMPs after JCCs =====
+  // After all block reordering, some blocks may have JMP_1 right after JCC
+  // that are unreachable (the JCC handles both paths). Remove them.
   for (MachineBasicBlock &MBB : MF) {
-    if (&MBB == EntryBlock || &MBB == NullRetBlock || &MBB == NotNullBlock ||
-        &MBB == EpilogueBlock || &MBB == ModuloBlock || &MBB == LoopExitBlock)
-      continue;
-    bool hasAddEsiEbx = false;
+    bool foundJCC = false;
+    SmallVector<MachineInstr *, 4> PostJCC;
     for (MachineInstr &MI : MBB) {
-      if (MI.getOpcode() == X86::ADD32rr &&
-          MI.getOperand(0).getReg() == X86::ESI &&
-          MI.getOperand(2).getReg() == X86::EBX) {
-        hasAddEsiEbx = true;
-        break;
+      if (foundJCC) {
+        if (MI.getOpcode() == X86::JMP_1 || MI.getOpcode() == X86::JMP_4)
+          PostJCC.push_back(&MI);
       }
+      if (MI.getOpcode() == X86::JCC_1 || MI.getOpcode() == X86::JCC_4)
+        foundJCC = true;
     }
-    if (hasAddEsiEbx && MBB.size() <= 3) {
-      // Small block with add esi,ebx - likely spurious.
-      // Redirect predecessors to the block's fallthrough successor.
-      MachineBasicBlock *FallThrough = nullptr;
-      for (MachineBasicBlock *Succ : MBB.successors()) {
-        FallThrough = Succ;
+    for (MachineInstr *MI : PostJCC)
+      MI->eraseFromParent();
+  }
+
+  // Re-run JMP-to-layout-successor removal
+  for (MachineBasicBlock &MBB : MF) {
+    MachineBasicBlock *LayoutSucc = MBB.getNextNode();
+    if (!LayoutSucc || MBB.empty()) continue;
+    MachineInstr &Last = MBB.back();
+    if (Last.getOpcode() == X86::JMP_1 &&
+        Last.getOperand(0).getMBB() == LayoutSucc)
+      Last.eraseFromParent();
+  }
+
+  // ===== Phase 11: Remove spurious add esi, ebx instruction =====
+  // This is a leftover buf advance that's redundant after HoistLenSub.
+  // The DO16 loop advances buf via add esi,16 each iteration, and the
+  // tail loop advances via inc esi. No additional bulk advance needed.
+  for (MachineBasicBlock &MBB : MF) {
+    for (auto I = MBB.begin(); I != MBB.end(); ++I) {
+      if (I->getOpcode() == X86::ADD32rr &&
+          I->getOperand(0).getReg() == X86::ESI &&
+          I->getOperand(2).getReg() == X86::EBX) {
+        I->eraseFromParent();
         break;
       }
-      if (FallThrough) {
-        for (MachineBasicBlock *Pred : MBB.predecessors())
-          Pred->ReplaceUsesOfBlockWith(&MBB, FallThrough);
-      }
-      // Don't erase - just let it become dead code
-      break;
     }
   }
 
