@@ -760,6 +760,99 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
     }
   }
 
+  // ===== Phase 9z4: Fix modulo second div instruction order =====
+  // MSVC second div: mov.s eax,edi; mov edi,0xfff1; mov.s ecx,edx; xor.s edx,edx; div edi
+  // Ours second div: mov ecx,edx; mov eax,edi; xor edx,edx; mov edi,0xfff1; div edi
+  // Need to reorder: move "mov ecx,edx" to after "mov edi,0xfff1" and
+  // swap "xor edx,edx" and "mov edi,0xfff1".
+  if (ModuloBlock) {
+    // Find the second div's instructions. The second DIV32r in the block.
+    MachineInstr *SecondDiv = nullptr;
+    unsigned divCount = 0;
+    for (MachineInstr &MI : *ModuloBlock) {
+      if (MI.getOpcode() == X86::DIV32r) {
+        divCount++;
+        if (divCount == 2) {
+          SecondDiv = &MI;
+          break;
+        }
+      }
+    }
+    if (SecondDiv) {
+      // Collect the 4 instructions before the second div:
+      // They should be: mov ecx,edx; mov eax,edi; xor edx,edx; mov edi,0xfff1
+      // Reorder to: mov eax,edi; mov edi,0xfff1; mov ecx,edx; xor edx,edx
+      SmallVector<MachineInstr *, 4> Pre;
+      auto It = MachineBasicBlock::iterator(SecondDiv);
+      for (int i = 0; i < 4 && It != ModuloBlock->begin(); i++) {
+        --It;
+        Pre.push_back(&*It);
+      }
+      // Pre is now [mov edi, xor edx, mov eax, mov ecx] (reverse order)
+      // We need to identify each by content and reorder.
+      MachineInstr *MovCxDx = nullptr;   // mov ecx, edx (save s1)
+      MachineInstr *MovAxDi = nullptr;   // mov eax, edi (s2 -> eax)
+      MachineInstr *XorDxDx = nullptr;   // xor edx, edx
+      MachineInstr *MovDiFFF1 = nullptr; // mov edi, 0xfff1
+      for (MachineInstr *MI : Pre) {
+        if ((MI->getOpcode() == X86::MOV32rr || MI->getOpcode() == X86::MOV32rr_REV) &&
+            MI->getOperand(0).getReg() == X86::ECX &&
+            MI->getOperand(1).getReg() == X86::EDX)
+          MovCxDx = MI;
+        else if ((MI->getOpcode() == X86::MOV32rr || MI->getOpcode() == X86::MOV32rr_REV) &&
+                 MI->getOperand(0).getReg() == X86::EAX &&
+                 MI->getOperand(1).getReg() == X86::EDI)
+          MovAxDi = MI;
+        else if ((MI->getOpcode() == X86::XOR32rr || MI->getOpcode() == X86::XOR32rr_REV) &&
+                 MI->getOperand(0).getReg() == X86::EDX)
+          XorDxDx = MI;
+        else if (MI->getOpcode() == X86::MOV32ri &&
+                 MI->getOperand(0).getReg() == X86::EDI)
+          MovDiFFF1 = MI;
+      }
+      // Reorder to: MovAxDi, MovDiFFF1, MovCxDx, XorDxDx, SecondDiv
+      if (MovAxDi && MovDiFFF1 && MovCxDx && XorDxDx) {
+        MovAxDi->removeFromParent();
+        MovDiFFF1->removeFromParent();
+        MovCxDx->removeFromParent();
+        XorDxDx->removeFromParent();
+        ModuloBlock->insert(MachineBasicBlock::iterator(SecondDiv), XorDxDx);
+        ModuloBlock->insert(MachineBasicBlock::iterator(XorDxDx), MovCxDx);
+        ModuloBlock->insert(MachineBasicBlock::iterator(MovCxDx), MovDiFFF1);
+        ModuloBlock->insert(MachineBasicBlock::iterator(MovDiFFF1), MovAxDi);
+      }
+    }
+  }
+
+  // ===== Phase 9z5: Redirect skip-DO16 jl to TailLoopBlock =====
+  // The LAST jl/jb from the SubBlock targets TailSetupBlock (now empty).
+  // Redirect it to TailLoopBlock. Only change the LAST such JCC (skip-DO16),
+  // NOT the first one (NMAX clamp jb which targets SubBlock, not TailSetup).
+  if (TailLoopBlock && TailSetupBlock) {
+    // Find SubBlock (the block with sub/cmp/jl)
+    MachineBasicBlock *SB = nullptr;
+    for (MachineBasicBlock &MBB : MF) {
+      for (MachineInstr &MI : MBB) {
+        if (MI.getOpcode() == X86::SUB32rr &&
+            MI.getOperand(0).getReg() == X86::EBX &&
+            MI.getOperand(2).getReg() == X86::EAX) {
+          SB = &MBB;
+          break;
+        }
+      }
+      if (SB) break;
+    }
+    if (SB) {
+      for (MachineInstr &MI : *SB) {
+        if (MI.isConditionalBranch() && MI.getOperand(0).isMBB() &&
+            MI.getOperand(0).getMBB() == TailSetupBlock) {
+          MI.getOperand(0).setMBB(TailLoopBlock);
+          break;
+        }
+      }
+    }
+  }
+
   // Also remove identity MOVs (src == dest) anywhere
   for (MachineBasicBlock &MBB : MF) {
     SmallVector<MachineInstr *, 4> ToRemove;

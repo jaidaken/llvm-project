@@ -94,7 +94,11 @@ bool X86PreferSignedJccPass::runOnMachineFunction(MachineFunction &MF) {
         auto It = MachineBasicBlock::iterator(&MI);
         while (It != MBB.begin()) {
           --It;
-          if (It->getOpcode() == X86::CMP32ri8) {
+          if (It->getOpcode() == X86::CMP32ri8 ||
+              (It->getOpcode() == X86::CMP32ri &&
+               It->getOperand(1).isImm() &&
+               It->getOperand(1).getImm() >= -128 &&
+               It->getOperand(1).getImm() <= 127)) {
             afterCmpri8 = true;
             break;
           }
