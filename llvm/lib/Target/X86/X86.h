@@ -209,6 +209,10 @@ FunctionPass *createX86HoistLenSubPass();
 /// functions with msvc6_regalloc attribute.
 FunctionPass *createX86StripNopPaddingPass();
 
+/// Return a Machine IR pass that rewrites unsigned JCC conditions to
+/// signed equivalents (jb->jl, ja->jg, etc.).
+FunctionPass *createX86PreferSignedJccPass();
+
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();
 

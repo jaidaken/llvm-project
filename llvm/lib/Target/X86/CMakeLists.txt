@@ -62,6 +62,7 @@ set(sources
   X86InterleaveS2Update.cpp
   X86HoistLenSub.cpp
   X86StripNopPadding.cpp
+  X86PreferSignedJcc.cpp
   X86FastISel.cpp
   X86FixupBWInsts.cpp
   X86FixupLEAs.cpp
