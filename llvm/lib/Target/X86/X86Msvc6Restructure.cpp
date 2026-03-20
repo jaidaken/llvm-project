@@ -549,6 +549,40 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
   // Find the tail setup block - it's the target of the "jl skip_do16" branch
   // from the outer loop (cmp eax, 0x10; jl tail_setup).
   // Search OuterLoopBlock for a JCC with COND_L and get its target.
+  // ===== Phase 8a: Move sub/cmp/jb block after NMAX clamp =====
+  // The "sub ebx, eax; cmp eax, 0x10; jb tail" should be right after
+  // "mov eax, 0x15b0" so the NMAX jb is a short branch. Find the sub
+  // block and the NMAX fallthrough block, place sub after the fallthrough.
+  if (OuterLoopBlock) {
+    MachineBasicBlock *SubBlock = nullptr;
+    MachineBasicBlock *NmaxFallthrough = nullptr;
+
+    // Find the sub block
+    for (MachineBasicBlock &MBB : MF) {
+      if (&MBB == OuterLoopBlock) continue;
+      for (MachineInstr &MI : MBB) {
+        if (MI.getOpcode() == X86::SUB32rr &&
+            MI.getOperand(0).getReg() == X86::EBX &&
+            MI.getOperand(2).getReg() == X86::EAX) {
+          SubBlock = &MBB;
+          break;
+        }
+      }
+      if (SubBlock) break;
+    }
+
+    // Find the NMAX fallthrough block (contains "mov eax, 0x15b0")
+    // It's the block right after OuterLoopBlock in layout
+    if (OuterLoopBlock->getNextNode()) {
+      NmaxFallthrough = OuterLoopBlock->getNextNode();
+    }
+
+    // Move sub block right after the NMAX fallthrough
+    if (SubBlock && NmaxFallthrough && SubBlock != NmaxFallthrough->getNextNode()) {
+      SubBlock->moveAfter(NmaxFallthrough);
+    }
+  }
+
   // Find the tail setup block - target of the LAST JCC in OuterLoopBlock.
   // The last JCC is "cmp eax, 0x10; jl/jb skip_do16" (skip to tail setup).
   // The first JCC is "cmp ebx, 0x15b0; jb" (NMAX clamp - short branch).
