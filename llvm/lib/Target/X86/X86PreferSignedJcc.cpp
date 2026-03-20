@@ -42,10 +42,8 @@ public:
 char X86PreferSignedJccPass::ID = 0;
 
 bool X86PreferSignedJccPass::runOnMachineFunction(MachineFunction &MF) {
-  // Disabled: Clang already generates correct signed/unsigned JCC from
-  // C source types. int comparisons get jl/jge, unsigned get jb/jbe/ja.
-  // Converting breaks MSVC matching where unsigned comparisons need jb/jbe/ja.
-  return false;
+  // Only convert after CMP instructions (signed comparisons), NOT after TEST.
+  // MSVC uses unsigned jb/jbe/ja after TEST, signed jl/jge after CMP.
 
   if (!MF.getFunction().hasFnAttribute(Attribute::PreferDiv)) {
     return false;
@@ -86,6 +84,26 @@ bool X86PreferSignedJccPass::runOnMachineFunction(MachineFunction &MF) {
       }
       if (flagSetByTest)
         continue; // Keep unsigned JCC after TEST
+
+      // Also check if the CMP uses a small immediate (CMP32ri8 with imm8).
+      // MSVC uses signed jl for CMP against small constants (like 0x10)
+      // but unsigned jb for CMP against large constants (like 0x15b0).
+      // Only convert jb->jl when preceded by CMP32ri8 (sign-extended 8-bit).
+      bool afterCmpri8 = false;
+      {
+        auto It = MachineBasicBlock::iterator(&MI);
+        while (It != MBB.begin()) {
+          --It;
+          if (It->getOpcode() == X86::CMP32ri8) {
+            afterCmpri8 = true;
+            break;
+          }
+          if (It->modifiesRegister(X86::EFLAGS, /*TRI=*/nullptr))
+            break;
+        }
+      }
+      if (!afterCmpri8)
+        continue; // Only convert after CMP with small immediate
 
       switch (CC) {
       case X86::COND_B:  NewCC = X86::COND_L;  break; // jb -> jl

@@ -698,6 +698,26 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
     }
   }
 
+  // ===== Phase 10a2: Remove redundant MOV chain (mov ebx,eax; mov ebp,ebx -> mov ebp,eax) =====
+  for (MachineBasicBlock &MBB : MF) {
+    for (auto I = MBB.begin(), E = MBB.end(); I != E; ++I) {
+      auto Next = std::next(I);
+      if (Next == E) break;
+      // Match: MOV32rr EBX, EAX followed by MOV32rr EBP, EBX
+      if ((I->getOpcode() == X86::MOV32rr || I->getOpcode() == X86::MOV32rr_REV) &&
+          I->getOperand(0).getReg() == X86::EBX &&
+          I->getOperand(1).getReg() == X86::EAX &&
+          (Next->getOpcode() == X86::MOV32rr || Next->getOpcode() == X86::MOV32rr_REV) &&
+          Next->getOperand(0).getReg() == X86::EBP &&
+          Next->getOperand(1).getReg() == X86::EBX) {
+        // Replace with: MOV32rr EBP, EAX
+        Next->getOperand(1).setReg(X86::EAX);
+        I->eraseFromParent();
+        break;
+      }
+    }
+  }
+
   // ===== Phase 10b: Final cleanup =====
   // Remove ALL JMP instructions that follow a JCC in the same block.
   // These are unreachable fallthrough targets from before block reordering.
