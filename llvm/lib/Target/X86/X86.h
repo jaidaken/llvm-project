@@ -213,6 +213,10 @@ FunctionPass *createX86StripNopPaddingPass();
 /// signed equivalents (jb->jl, ja->jg, etc.).
 FunctionPass *createX86PreferSignedJccPass();
 
+/// Return a Machine IR pass that restructures functions to match MSVC 6.0
+/// block layout, split prologue, and interleaved epilogue.
+FunctionPass *createX86Msvc6RestructurePass();
+
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();
 
