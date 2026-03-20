@@ -189,6 +189,10 @@ FunctionPass *createX86PreferMovImmPass();
 /// base is in EBX but MSVC 6.0 expects it in ESI.
 FunctionPass *createX86SwapBufRegisterPass();
 
+/// Return a Machine IR pass that rewrites add/cmp/ja loop latches to
+/// dec ebp/jne with trip count precomputation.
+FunctionPass *createX86PreferTripCountLoopPass();
+
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();
 
