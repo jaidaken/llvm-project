@@ -197,6 +197,10 @@ FunctionPass *createX86PreferTripCountLoopPass();
 /// and converts positive offsets to negative.
 FunctionPass *createX86PreferEarlyBufAdvancePass();
 
+/// Return a Machine IR pass that interleaves s2 updates across DO16
+/// iterations to match MSVC 6.0's software-pipelined pattern.
+FunctionPass *createX86InterleaveS2UpdatePass();
+
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();
 

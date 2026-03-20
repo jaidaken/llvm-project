@@ -103,6 +103,14 @@ cl::opt<bool> X86AlignBranchWithin32BBoundaries(
         "assumptions about labels corresponding to particular instructions, "
         "and should be used with caution."));
 
+cl::opt<bool> X86NoForwardBranchRelax(
+    "x86-no-forward-branch-relax", cl::init(false),
+    cl::desc(
+        "Do not relax forward branch references that are unresolved. "
+        "Instead, assume they will fit in the short encoding and only "
+        "relax if proven not to fit after layout. This matches MSVC ml.exe "
+        "behavior for byte-exact decompilation projects."));
+
 cl::opt<unsigned> X86PadMaxPrefixSize(
     "x86-pad-max-prefix-size", cl::init(0),
     cl::desc("Maximum number of prefixes to use for padding"));
@@ -185,6 +193,12 @@ public:
 
   bool fixupNeedsRelaxation(const MCFixup &Fixup,
                             uint64_t Value) const override;
+
+  bool fixupNeedsRelaxationAdvanced(const MCAssembler &Asm,
+                                    const MCFixup &Fixup, bool Resolved,
+                                    uint64_t Value,
+                                    const MCRelaxableFragment *DF,
+                                    const bool WasForced) const override;
 
   void relaxInstruction(MCInst &Inst,
                         const MCSubtargetInfo &STI) const override;
@@ -750,6 +764,20 @@ bool X86AsmBackend::fixupNeedsRelaxation(const MCFixup &Fixup,
   return !isInt<8>(Value);
 }
 
+bool X86AsmBackend::fixupNeedsRelaxationAdvanced(
+    const MCAssembler &Asm, const MCFixup &Fixup, bool Resolved,
+    uint64_t Value, const MCRelaxableFragment *DF,
+    const bool WasForced) const {
+  // Note: -x86-no-forward-branch-relax is handled in finishLayout()
+  // as a post-layout shrink pass, not here. This default behavior
+  // ensures all branches start relaxed (conservative), then finishLayout
+  // shrinks them back where possible.
+  // Default behavior: relax unresolved fixups conservatively.
+  if (!Resolved)
+    return true;
+  return fixupNeedsRelaxation(Fixup, Value);
+}
+
 // FIXME: Can tblgen help at all here to verify there aren't other instructions
 // we can relax?
 void X86AsmBackend::relaxInstruction(MCInst &Inst,
@@ -861,6 +889,94 @@ bool X86AsmBackend::padInstructionEncoding(MCRelaxableFragment &RF,
 }
 
 void X86AsmBackend::finishLayout(MCAssembler const &Asm) const {
+  // Post-layout branch shrink pass for -x86-no-forward-branch-relax.
+  // After the normal relaxation pass has conservatively expanded all branches
+  // to near encoding (JCC_4/JMP_4), scan for branches whose displacement
+  // actually fits in ±127 bytes and shrink them back to short encoding
+  // (JCC_1/JMP_1). This matches MSVC ml.exe behavior which always uses the
+  // smallest encoding that fits.
+  //
+  // This is safe because by this point layout is complete, so all symbol
+  // offsets are known. The resulting FK_PCRel_1 fixups are intra-section and
+  // fully resolved, so they never reach the COFF relocation writer.
+  if (X86NoForwardBranchRelax) {
+    bool Changed;
+    unsigned Iterations = 0;
+    do {
+      Changed = false;
+      for (MCSection &Sec : Asm) {
+        if (!Sec.isText())
+          continue;
+        for (MCFragment &F : Sec) {
+          if (F.getKind() != MCFragment::FT_Relaxable)
+            continue;
+          auto &RF = cast<MCRelaxableFragment>(F);
+          unsigned Opcode = RF.getInst().getOpcode();
+
+          // Only shrink relaxed branches (JCC_4 → JCC_1, JMP_4 → JMP_1).
+          unsigned ShortOpcode;
+          if (Opcode == X86::JCC_4)
+            ShortOpcode = X86::JCC_1;
+          else if (Opcode == X86::JMP_4)
+            ShortOpcode = X86::JMP_1;
+          else
+            continue;
+
+          // Get the branch target from the fixup.
+          if (RF.getFixups().empty())
+            continue;
+          const MCFixup &Fixup = RF.getFixups()[0];
+          const auto *SRE = dyn_cast<MCSymbolRefExpr>(Fixup.getValue());
+          if (!SRE)
+            continue;
+          const MCSymbol &Sym = SRE->getSymbol();
+          if (!Sym.isDefined() || !Sym.getFragment())
+            continue;
+
+          // Both branch and target must be in the same section.
+          if (Sym.getFragment()->getParent() != RF.getParent())
+            continue;
+
+          // Compute displacement using the current layout.
+          // displacement = target_offset - (branch_offset + branch_size)
+          // For forward branches, this equals the short-encoding displacement
+          // (target shifts by the same delta as PC). For backward branches,
+          // the short displacement is closer to 0, so this is conservative.
+          uint64_t TargetOffset = Asm.getSymbolOffset(Sym);
+          uint64_t BranchEnd =
+              Asm.getFragmentOffset(RF) + RF.getContents().size();
+          int64_t Disp = static_cast<int64_t>(TargetOffset - BranchEnd);
+
+          if (!isInt<8>(Disp))
+            continue;
+
+          // Shrink: change opcode and re-encode.
+          MCInst Shrunk = RF.getInst();
+          Shrunk.setOpcode(ShortOpcode);
+
+          SmallVector<MCFixup, 4> Fixups;
+          SmallString<15> Code;
+          Asm.getEmitter().encodeInstruction(Shrunk, Code, Fixups,
+                                             *RF.getSubtargetInfo());
+
+          RF.setInst(Shrunk);
+          RF.getContents() = Code;
+          RF.getFixups() = Fixups;
+          Sec.setHasLayout(false);
+          Changed = true;
+        }
+      }
+
+      // Force layout recomputation after shrinking.
+      if (Changed) {
+        for (MCSection &Section : Asm) {
+          Asm.getFragmentOffset(*Section.curFragList()->Tail);
+          Asm.computeFragmentSize(*Section.curFragList()->Tail);
+        }
+      }
+    } while (Changed && ++Iterations < 10);
+  }
+
   // See if we can further relax some instructions to cut down on the number of
   // nop bytes required for code alignment.  The actual win is in reducing
   // instruction count, not number of bytes.  Modern X86-64 can easily end up
