@@ -632,7 +632,34 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
       Last.eraseFromParent();
   }
 
-  // ===== Phase 10c: Remove dead blocks (no predecessors) =====
+  // ===== Phase 10c: Fix modulo exit branch =====
+  // The modulo block ends with "test ebx; je epilogue". MSVC uses "test ebx;
+  // ja outer_loop" (inverted condition, backward jump). When the je target
+  // is the layout successor, we need to invert to "ja OuterLoop".
+  if (ModuloBlock && OuterLoopBlock) {
+    for (MachineInstr &MI : *ModuloBlock) {
+      if (MI.isConditionalBranch() && MI.getOperand(0).isMBB()) {
+        MachineBasicBlock *Target = MI.getOperand(0).getMBB();
+        MachineBasicBlock *LayoutSucc = ModuloBlock->getNextNode();
+        if (Target == LayoutSucc || Target == EpilogueBlock ||
+            Target == LoopExitBlock) {
+          // Change from "je epilogue" to "ja OuterLoop"
+          MI.getOperand(0).setMBB(OuterLoopBlock);
+          // Invert: COND_E -> COND_A (je -> ja)
+          int64_t CC = MI.getOperand(1).getImm();
+          if (CC == X86::COND_E)
+            MI.getOperand(1).setImm(X86::COND_A);
+          else if (CC == X86::COND_LE || CC == X86::COND_BE)
+            MI.getOperand(1).setImm(X86::COND_A);
+          // Force near encoding for backward jump
+          MI.setDesc(TII->get(X86::JCC_4));
+          break;
+        }
+      }
+    }
+  }
+
+  // ===== Phase 10d: Remove dead blocks (no predecessors) =====
   SmallVector<MachineBasicBlock *, 4> DeadBlocks;
   for (MachineBasicBlock &MBB : MF) {
     if (&MBB == EntryBlock)
