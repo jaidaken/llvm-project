@@ -519,3 +519,6 @@ def PreferAndMask : EnumAttr<"PreferAndMask", IntersectPreserve, [FnAttr]>;
 
 /// Convert XOR32rr self-xor + INC32r to MOV32ri reg, 1 to match MSVC 6.0.
 def PreferMovImm : EnumAttr<"PreferMovImm", IntersectPreserve, [FnAttr]>;
+
+/// Force integer division instead of multiply-shift for constant divisors.
+def PreferDiv : EnumAttr<"PreferDiv", IntersectPreserve, [FnAttr]>;

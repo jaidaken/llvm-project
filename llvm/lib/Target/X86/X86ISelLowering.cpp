@@ -60601,8 +60601,12 @@ bool X86TargetLowering::isIntDivCheap(EVT VT, AttributeList Attr) const {
   // integer division, leaving the division as-is is a loss even in terms of
   // size, because it will have to be scalarized, while the alternative code
   // sequence can be performed in vector form.
+  //
+  // bw1-decomp: PreferDiv forces div for MSVC 6.0 matching. MSVC 6.0 did not
+  // perform the multiply-by-magic-number optimization for constant divisors.
   bool OptSize = Attr.hasFnAttr(Attribute::MinSize);
-  return OptSize && !VT.isVector();
+  bool ForcedDiv = Attr.hasFnAttr(Attribute::PreferDiv);
+  return (OptSize || ForcedDiv) && !VT.isVector();
 }
 
 void X86TargetLowering::initializeSplitCSR(MachineBasicBlock *Entry) const {

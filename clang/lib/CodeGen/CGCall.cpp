@@ -2427,6 +2427,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::PreferAndMask);
     if (TargetDecl->hasAttr<PreferMovImmAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::PreferMovImm);
+    if (TargetDecl->hasAttr<PreferDivAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::PreferDiv);
     if (const auto *FCS = TargetDecl->getAttr<ForcedCalleeSavesAttr>())
       FuncAttrs.addAttribute("forced_callee_saves", FCS->getRegisters());
     if (const auto *TB = TargetDecl->getAttr<TrailingBytesAttr>())
