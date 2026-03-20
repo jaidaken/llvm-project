@@ -185,6 +185,10 @@ FunctionPass *createX86PreferAndMaskPass();
 /// for functions with the prefer_mov_imm attribute.
 FunctionPass *createX86PreferMovImmPass();
 
+/// Return a Machine IR pass that swaps EBX<->ESI when the primary memory
+/// base is in EBX but MSVC 6.0 expects it in ESI.
+FunctionPass *createX86SwapBufRegisterPass();
+
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();
 
