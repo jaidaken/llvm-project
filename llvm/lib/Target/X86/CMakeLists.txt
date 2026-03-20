@@ -58,6 +58,7 @@ set(sources
   X86PreferMovImm.cpp
   X86SwapBufRegister.cpp
   X86PreferTripCountLoop.cpp
+  X86PreferEarlyBufAdvance.cpp
   X86FastISel.cpp
   X86FixupBWInsts.cpp
   X86FixupLEAs.cpp

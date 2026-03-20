@@ -193,6 +193,10 @@ FunctionPass *createX86SwapBufRegisterPass();
 /// dec ebp/jne with trip count precomputation.
 FunctionPass *createX86PreferTripCountLoopPass();
 
+/// Return a Machine IR pass that hoists pointer advance before loads
+/// and converts positive offsets to negative.
+FunctionPass *createX86PreferEarlyBufAdvancePass();
+
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();
 

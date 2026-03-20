@@ -615,6 +615,7 @@ void X86PassConfig::addPreEmitPass() {
   // - ExpandMovzx runs last (it may create XOR+MOV patterns).
   addPass(createX86SwapBufRegisterPass());
   addPass(createX86PreferTripCountLoopPass());
+  addPass(createX86PreferEarlyBufAdvancePass());
   addPass(createX86PreferIntegerFloatMovePass());
   addPass(createX86PreferFcompFnstswPass());
   addPass(createX86NoTestSeteFoldPass());
