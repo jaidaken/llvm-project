@@ -61,6 +61,27 @@ bool X86PreferSignedJccPass::runOnMachineFunction(MachineFunction &MF) {
       int64_t CC = CondOp.getImm();
       int64_t NewCC = CC;
 
+      // MSVC 6.0 uses unsigned JCC after TEST, signed JCC after CMP.
+      // Scan backward to find the flag-setting instruction.
+      bool flagSetByTest = false;
+      {
+        auto It = MachineBasicBlock::iterator(&MI);
+        while (It != MBB.begin()) {
+          --It;
+          unsigned Opc = It->getOpcode();
+          if (Opc == X86::TEST32rr || Opc == X86::TEST16rr ||
+              Opc == X86::TEST8rr || Opc == X86::TEST32ri ||
+              Opc == X86::TEST8ri) {
+            flagSetByTest = true;
+            break;
+          }
+          if (It->modifiesRegister(X86::EFLAGS, /*TRI=*/nullptr))
+            break;
+        }
+      }
+      if (flagSetByTest)
+        continue; // Keep unsigned JCC after TEST
+
       switch (CC) {
       case X86::COND_B:  NewCC = X86::COND_L;  break; // jb -> jl
       case X86::COND_AE: NewCC = X86::COND_GE; break; // jae -> jge

@@ -472,17 +472,145 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
     // followed by: pop ebx; shl eax,16; pop edi; or eax,ecx; pop esi; ret
   }
 
-  // ===== Phase 7: Insert pop ebp at loop exit =====
-  // Find the block that has "test ebx, ebx; je <len0_return>" after the
-  // modulo section. That's where pop ebp should go.
-  // In MSVC, "pop ebp" is right before the epilogue entry point.
-  // Find the predecessor of the epilogue that isn't the null return.
-  for (MachineBasicBlock *Pred : EpilogueBlock->predecessors()) {
-    if (Pred != NullRetBlock && Pred != ModuloBlock) {
-      // This is the loop exit block. Insert pop ebp at its end, before
-      // the terminator.
-      auto Term = Pred->getFirstTerminator();
-      BuildMI(*Pred, Term, DL, TII->get(X86::POP32r), X86::EBP);
+  // ===== Phase 7: Fix len==0 branch and create loop exit block =====
+
+  // 7a: Change the JCC in NotNullBlock from jne OuterLoop to jbe Epilogue
+  for (auto I = NotNullBlock->begin(); I != NotNullBlock->end(); ++I) {
+    if (I->getOpcode() == X86::JCC_1 || I->getOpcode() == X86::JCC_4) {
+      I->setDesc(TII->get(X86::JCC_4)); // Force 6-byte near encoding
+      I->getOperand(0).setMBB(EpilogueBlock);
+      I->getOperand(1).setImm(X86::COND_BE);
+      break;
+    }
+  }
+
+  // 7b: Remove spurious POP EBP, JMP to epilogue, and OR EDI,ECX from NotNullBlock
+  SmallVector<MachineInstr *, 4> ToRemoveNN;
+  for (MachineInstr &MI : *NotNullBlock) {
+    if (MI.getOpcode() == X86::POP32r &&
+        MI.getOperand(0).getReg() == X86::EBP)
+      ToRemoveNN.push_back(&MI);
+    if (MI.getOpcode() == X86::JMP_1 &&
+        MI.getOperand(0).getMBB() == EpilogueBlock)
+      ToRemoveNN.push_back(&MI);
+    if (MI.getOpcode() == X86::OR32rr &&
+        MI.getOperand(0).getReg() == X86::EDI &&
+        MI.getOperand(2).getReg() == X86::ECX)
+      ToRemoveNN.push_back(&MI);
+  }
+  for (MachineInstr *MI : ToRemoveNN)
+    MI->eraseFromParent();
+
+  // 7d: Create loop exit block with pop ebp between modulo and epilogue
+  MachineBasicBlock *LoopExitBlock = MF.CreateMachineBasicBlock();
+  MF.insert(MF.end(), LoopExitBlock);
+  BuildMI(*LoopExitBlock, LoopExitBlock->end(), DL,
+          TII->get(X86::POP32r), X86::EBP);
+  LoopExitBlock->addSuccessor(EpilogueBlock);
+
+  // Update ModuloBlock: fallthrough goes to LoopExitBlock not EpilogueBlock
+  if (ModuloBlock->isSuccessor(EpilogueBlock)) {
+    ModuloBlock->removeSuccessor(EpilogueBlock, true);
+    ModuloBlock->addSuccessor(LoopExitBlock);
+  }
+
+  // ===== Phase 8: Full block reorder =====
+  MachineBasicBlock *DO16Block = nullptr;
+  MachineBasicBlock *TailTestBlock = nullptr;
+  MachineBasicBlock *TailLoopBlock = nullptr;
+
+  for (MachineBasicBlock &MBB : MF) {
+    for (MachineInstr &MI : MBB) {
+      if (MI.getOpcode() == X86::DEC32r &&
+          MI.getOperand(0).getReg() == X86::EBP && !DO16Block)
+        DO16Block = &MBB;
+      if (MI.getOpcode() == X86::INC32r && !TailLoopBlock) {
+        // Tail loop has INC (buf pointer) - distinguish from DO16
+        unsigned instCount = 0;
+        for (MachineInstr &MI2 : MBB) instCount++;
+        if (instCount < 20)
+          TailLoopBlock = &MBB;
+      }
+    }
+  }
+
+  // TailTestBlock: the block between DO16 exit and tail loop.
+  // It's a successor of DO16Block that isn't the DO16 loop itself.
+  if (DO16Block) {
+    for (MachineBasicBlock *Succ : DO16Block->successors()) {
+      if (Succ != DO16Block) {
+        // Check if this block tests the remainder (test eax/ebx)
+        for (MachineInstr &MI : *Succ) {
+          if (MI.getOpcode() == X86::TEST32rr) {
+            TailTestBlock = Succ;
+            break;
+          }
+        }
+        if (TailTestBlock) break;
+      }
+    }
+  }
+
+  // Reorder: DO16 -> TailTest -> TailLoop -> Modulo -> LoopExit -> Epilogue
+  if (DO16Block && TailLoopBlock && ModuloBlock) {
+    if (TailTestBlock && TailTestBlock != DO16Block)
+      TailTestBlock->moveAfter(DO16Block);
+    MachineBasicBlock *afterTail = TailTestBlock ? TailTestBlock : DO16Block;
+    if (TailLoopBlock != afterTail)
+      TailLoopBlock->moveAfter(afterTail);
+    ModuloBlock->moveAfter(TailLoopBlock);
+    LoopExitBlock->moveAfter(ModuloBlock);
+    EpilogueBlock->moveAfter(LoopExitBlock);
+  }
+
+  // ===== Phase 9: Remove redundant JMPs to layout successors =====
+  for (MachineBasicBlock &MBB : MF) {
+    MachineBasicBlock *LayoutSucc = MBB.getNextNode();
+    if (!LayoutSucc || MBB.empty())
+      continue;
+    MachineInstr &Last = MBB.back();
+    if (Last.getOpcode() == X86::JMP_1 &&
+        Last.getOperand(0).getMBB() == LayoutSucc) {
+      Last.eraseFromParent();
+      continue;
+    }
+    // Also remove JMP after JCC when target is layout successor
+    if (MBB.size() >= 2) {
+      MachineInstr &Last2 = MBB.back();
+      if (Last2.getOpcode() == X86::JMP_1 &&
+          Last2.getOperand(0).getMBB() == LayoutSucc) {
+        Last2.eraseFromParent();
+      }
+    }
+  }
+
+  // ===== Phase 10: Remove spurious add esi, ebx block =====
+  for (MachineBasicBlock &MBB : MF) {
+    if (&MBB == EntryBlock || &MBB == NullRetBlock || &MBB == NotNullBlock ||
+        &MBB == EpilogueBlock || &MBB == ModuloBlock || &MBB == LoopExitBlock)
+      continue;
+    bool hasAddEsiEbx = false;
+    for (MachineInstr &MI : MBB) {
+      if (MI.getOpcode() == X86::ADD32rr &&
+          MI.getOperand(0).getReg() == X86::ESI &&
+          MI.getOperand(2).getReg() == X86::EBX) {
+        hasAddEsiEbx = true;
+        break;
+      }
+    }
+    if (hasAddEsiEbx && MBB.size() <= 3) {
+      // Small block with add esi,ebx - likely spurious.
+      // Redirect predecessors to the block's fallthrough successor.
+      MachineBasicBlock *FallThrough = nullptr;
+      for (MachineBasicBlock *Succ : MBB.successors()) {
+        FallThrough = Succ;
+        break;
+      }
+      if (FallThrough) {
+        for (MachineBasicBlock *Pred : MBB.predecessors())
+          Pred->ReplaceUsesOfBlockWith(&MBB, FallThrough);
+      }
+      // Don't erase - just let it become dead code
       break;
     }
   }
