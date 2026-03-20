@@ -577,9 +577,50 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
       NmaxFallthrough = OuterLoopBlock->getNextNode();
     }
 
-    // Move sub block right after the NMAX fallthrough
-    if (SubBlock && NmaxFallthrough && SubBlock != NmaxFallthrough->getNextNode()) {
-      SubBlock->moveAfter(NmaxFallthrough);
+    // Move sub/cmp/jb instructions FROM SubBlock INTO NmaxFallthrough,
+    // right at the start (before the trip count setup). This makes the
+    // NMAX jb a short branch that skips the mov eax, 0x15b0 then lands
+    // on the sub.
+    // Split NmaxFallthrough after "mov eax, 0x15b0" and insert SubBlock
+    // between the two halves. This gives:
+    //   OuterLoop: jb SubBlock
+    //   NmaxBlock: mov eax, 0x15b0 (falls through to SubBlock)
+    //   SubBlock: sub; cmp; jl tail (falls through to TripCount+DO16)
+    //   TripCount+DO16: trip count setup + loop body
+    if (SubBlock && NmaxFallthrough && SubBlock != NmaxFallthrough) {
+      // Find "mov eax, 0x15b0" in NmaxFallthrough
+      MachineInstr *MovNmax = nullptr;
+      for (MachineInstr &MI : *NmaxFallthrough) {
+        if (MI.getOpcode() == X86::MOV32ri &&
+            MI.getOperand(0).getReg() == X86::EAX &&
+            MI.getOperand(1).getImm() == 0x15b0) {
+          MovNmax = &MI;
+          break;
+        }
+      }
+      errs() << "  MovNmax=" << (MovNmax != nullptr)
+             << " SubBlock=" << (SubBlock ? (int)SubBlock->getNumber() : -1)
+             << " NmaxFT=" << (NmaxFallthrough ? (int)NmaxFallthrough->getNumber() : -1) << "\n";
+      if (MovNmax) {
+        // Split: create TripCountBlock from instructions after MovNmax
+        auto SplitPt = std::next(MachineBasicBlock::iterator(MovNmax));
+        MachineBasicBlock *TripCountBlock = MF.CreateMachineBasicBlock();
+        MF.insert(std::next(MachineFunction::iterator(NmaxFallthrough)),
+                  TripCountBlock);
+        TripCountBlock->splice(TripCountBlock->end(), NmaxFallthrough,
+                               SplitPt, NmaxFallthrough->end());
+        // Transfer successors
+        TripCountBlock->transferSuccessorsAndUpdatePHIs(NmaxFallthrough);
+        NmaxFallthrough->addSuccessor(SubBlock);
+
+        // Place blocks: NmaxFallthrough -> SubBlock -> TripCountBlock
+        SubBlock->moveAfter(NmaxFallthrough);
+        TripCountBlock->moveAfter(SubBlock);
+
+        // SubBlock should fall through to TripCountBlock
+        if (!SubBlock->isSuccessor(TripCountBlock))
+          SubBlock->addSuccessor(TripCountBlock);
+      }
     }
   }
 
@@ -608,11 +649,8 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
     if (TailTestBlock && TailTestBlock != DO16Block)
       TailTestBlock->moveAfter(DO16Block);
     MachineBasicBlock *afterTest = TailTestBlock ? TailTestBlock : DO16Block;
-    if (TailSetupBlock) {
-      errs() << "  Moving TailSetup bb." << TailSetupBlock->getNumber()
-             << " after bb." << afterTest->getNumber() << "\n";
-      TailSetupBlock->moveAfter(afterTest);
-    }
+    // TailSetupBlock is handled by Phase 8a (placed after NMAX fallthrough).
+    // Don't move it again here.
     MachineBasicBlock *afterSetup = TailSetupBlock ? TailSetupBlock : afterTest;
     if (TailLoopBlock != afterSetup)
       TailLoopBlock->moveAfter(afterSetup);
