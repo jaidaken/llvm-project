@@ -1197,6 +1197,38 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
       if (is_contained(Order, X86::ESI) && !MRI->isReserved(X86::ESI))
         Hints.push_back(X86::ESI);
     } else {
+      // Do memory-base scan early so we can put ESI at the front of hints.
+      bool isUsedAsMemBase = false;
+      bool isMultiBB = false;
+      const MachineBasicBlock *FirstBB = nullptr;
+      for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
+        const MachineInstr *MI = MO.getParent();
+        const MachineBasicBlock *BB = MI->getParent();
+        if (!FirstBB)
+          FirstBB = BB;
+        else if (BB != FirstBB)
+          isMultiBB = true;
+        if (MO.isUse()) {
+          int MemOpIdx = X86II::getMemoryOperandNo(MI->getDesc().TSFlags);
+          if (MemOpIdx >= 0) {
+            MemOpIdx += X86II::getOperandBias(MI->getDesc());
+            unsigned BaseIdx = MemOpIdx + X86::AddrBaseReg;
+            if (BaseIdx < MI->getNumOperands() &&
+                MI->getOperand(BaseIdx).isReg() &&
+                MI->getOperand(BaseIdx).getReg() == VirtReg) {
+              isUsedAsMemBase = true;
+            }
+          }
+        }
+      }
+
+      // Insert ESI at position 0 for memory-base vregs. This must be the
+      // FIRST hint so the greedy allocator tries ESI before anything else.
+      if (isUsedAsMemBase) {
+        if (is_contained(Order, X86::ESI) && !MRI->isReserved(X86::ESI))
+          Hints.insert(Hints.begin(), X86::ESI);
+      }
+
       // MSVC 6.0 scratch register order: EAX, EDX, ECX
       // LLVM default order: EAX, ECX, EDX
       // Only hint EDX for virtual registers that are destinations of MOVZX
@@ -1256,60 +1288,23 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
           Hints.push_back(X86::EBX);
       }
 
-      // For cdecl functions: detect vregs used as memory base registers
-      // and hint ESI (MSVC 6.0 puts pointer params in ESI). Also provide
-      // the MSVC callee-saved order as fallback for multi-BB vregs.
-      bool isUsedAsMemBase = false;
-      bool isMultiBB = false;
-      const MachineBasicBlock *FirstBB = nullptr;
-      for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
-        const MachineInstr *MI = MO.getParent();
-        const MachineBasicBlock *BB = MI->getParent();
-        if (!FirstBB)
-          FirstBB = BB;
-        else if (BB != FirstBB)
-          isMultiBB = true;
-        if (MO.isUse()) {
-          int MemOpIdx = X86II::getMemoryOperandNo(MI->getDesc().TSFlags);
-          if (MemOpIdx >= 0) {
-            MemOpIdx += X86II::getOperandBias(MI->getDesc());
-            unsigned BaseIdx = MemOpIdx + X86::AddrBaseReg;
-            if (BaseIdx < MI->getNumOperands() &&
-                MI->getOperand(BaseIdx).isReg() &&
-                MI->getOperand(BaseIdx).getReg() == VirtReg) {
-              isUsedAsMemBase = true;
-            }
-          }
-        }
-      }
-
+      // Provide callee-saved hints. Memory-base vregs already got ESI at
+      // position 0 above. Other vregs get EBX, EDI (skipping ESI to leave
+      // it available for pointer vregs).
       if (isUsedAsMemBase && !isMovzxDest) {
-        if (is_contained(Order, X86::ESI) && !MRI->isReserved(X86::ESI) &&
-            !is_contained(Hints, X86::ESI))
-          Hints.push_back(X86::ESI);
-      }
-
-      if (isMultiBB && !isMovzxDest) {
-        // Memory-base vregs already got ESI above. For other multi-BB vregs,
-        // only hint EDI and EBX (not ESI) to avoid competing with pointer
-        // vregs for ESI. This matches MSVC 6.0's pattern: pointers get ESI,
-        // other long-lived values get EDI then EBX.
-        if (!isUsedAsMemBase) {
-          if (is_contained(Order, X86::EDI) && !MRI->isReserved(X86::EDI) &&
-              !is_contained(Hints, X86::EDI))
-            Hints.push_back(X86::EDI);
-          if (is_contained(Order, X86::EBX) && !MRI->isReserved(X86::EBX) &&
-              !is_contained(Hints, X86::EBX))
-            Hints.push_back(X86::EBX);
-        } else {
-          // Memory-base vregs get full callee-saved fallback
-          static const MCPhysReg Msvc6CalleeSaved[] = {
-              X86::ESI, X86::EDI, X86::EBX};
-          for (MCPhysReg Reg : Msvc6CalleeSaved) {
-            if (is_contained(Order, Reg) && !MRI->isReserved(Reg) &&
-                !is_contained(Hints, Reg))
-              Hints.push_back(Reg);
-          }
+        static const MCPhysReg MemBaseOrder[] = {X86::EDI, X86::EBX};
+        for (MCPhysReg Reg : MemBaseOrder) {
+          if (is_contained(Order, Reg) && !MRI->isReserved(Reg) &&
+              !is_contained(Hints, Reg))
+            Hints.push_back(Reg);
+        }
+      } else if (!isMovzxDest && !isRegMovzx16) {
+        static const MCPhysReg NonPtrOrder[] = {
+            X86::EBX, X86::EDI, X86::EBP};
+        for (MCPhysReg Reg : NonPtrOrder) {
+          if (is_contained(Order, Reg) && !MRI->isReserved(Reg) &&
+              !is_contained(Hints, Reg))
+            Hints.push_back(Reg);
         }
       }
     }
