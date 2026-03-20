@@ -3837,6 +3837,24 @@ bool X86AsmParser::processInstruction(MCInst &Inst, const OperandVector &Ops) {
   if (X86::optimizeShiftRotateWithImmediateOne(Inst))
     return true;
 
+  // When an ALU immediate instruction has a symbol expression operand,
+  // the matcher may select the ri8 form (sign-extended imm8) because
+  // the unresolved value is 0. But a symbol needs a 4-byte relocation,
+  // so expand ri8 back to ri (imm32), then optimize to the EAX short
+  // form (e.g., CMP32ri → CMP32i32 = opcode 3D, 5 bytes).
+  if (!ForcedNoOptimize) {
+    unsigned Opc = Inst.getOpcode();
+    unsigned LongOpc = X86::getOpcodeForLongImmediateForm(Opc);
+    if (LongOpc != Opc) {
+      // Check if the immediate operand is a symbol expression
+      MCOperand &ImmOp = Inst.getOperand(Inst.getNumOperands() - 1);
+      if (ImmOp.isExpr()) {
+        Inst.setOpcode(LongOpc);
+      }
+    }
+    X86::optimizeToFixedRegisterOrShortImmediateForm(Inst);
+  }
+
   auto replaceWithCCMPCTEST = [&](unsigned Opcode) -> bool {
     if (ForcedOpcodePrefix == OpcodePrefix_EVEX) {
       Inst.setFlags(~(X86::IP_USE_EVEX)&Inst.getFlags());
