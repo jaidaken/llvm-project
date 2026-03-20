@@ -585,30 +585,49 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
     }
   }
 
-  // ===== Phase 10: Final cleanup - remove ALL remaining JMPs after JCCs =====
-  // After all block reordering, some blocks may have JMP_1 right after JCC
-  // that are unreachable (the JCC handles both paths). Remove them.
+  // ===== Phase 10: Redirect two-hop jumps =====
+  // Some JCC instructions may target a block that only contains a JMP.
+  // Redirect them to the JMP's target (thread the jump).
   for (MachineBasicBlock &MBB : MF) {
+    for (MachineInstr &MI : MBB) {
+      if (!MI.isConditionalBranch() && !MI.isUnconditionalBranch())
+        continue;
+      if (!MI.getOperand(0).isMBB())
+        continue;
+      MachineBasicBlock *Target = MI.getOperand(0).getMBB();
+      // Check if target block only has a JMP
+      if (Target->size() == 1 && Target->back().isUnconditionalBranch() &&
+          Target->back().getOperand(0).isMBB()) {
+        MachineBasicBlock *FinalTarget = Target->back().getOperand(0).getMBB();
+        MI.getOperand(0).setMBB(FinalTarget);
+      }
+    }
+  }
+
+  // ===== Phase 10b: Final cleanup =====
+  // Remove ALL JMP instructions that follow a JCC in the same block.
+  // These are unreachable fallthrough targets from before block reordering.
+  // Also remove JMPs to layout successors (redundant fallthroughs).
+  for (MachineBasicBlock &MBB : MF) {
+    // Remove JMPs after JCCs
     bool foundJCC = false;
     SmallVector<MachineInstr *, 4> PostJCC;
     for (MachineInstr &MI : MBB) {
-      if (foundJCC) {
-        if (MI.getOpcode() == X86::JMP_1 || MI.getOpcode() == X86::JMP_4)
-          PostJCC.push_back(&MI);
-      }
-      if (MI.getOpcode() == X86::JCC_1 || MI.getOpcode() == X86::JCC_4)
+      if (foundJCC && MI.isUnconditionalBranch())
+        PostJCC.push_back(&MI);
+      if (MI.isConditionalBranch())
         foundJCC = true;
     }
     for (MachineInstr *MI : PostJCC)
       MI->eraseFromParent();
   }
-
-  // Re-run JMP-to-layout-successor removal
+  // Remove JMPs to layout successors
   for (MachineBasicBlock &MBB : MF) {
     MachineBasicBlock *LayoutSucc = MBB.getNextNode();
     if (!LayoutSucc || MBB.empty()) continue;
     MachineInstr &Last = MBB.back();
-    if (Last.getOpcode() == X86::JMP_1 &&
+    if (Last.isUnconditionalBranch() &&
+        Last.getOperand(0).isMBB() &&
         Last.getOperand(0).getMBB() == LayoutSucc)
       Last.eraseFromParent();
   }
