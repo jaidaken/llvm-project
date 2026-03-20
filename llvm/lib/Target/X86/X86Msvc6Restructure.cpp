@@ -632,6 +632,21 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
       Last.eraseFromParent();
   }
 
+  // ===== Phase 10c: Remove dead blocks (no predecessors) =====
+  SmallVector<MachineBasicBlock *, 4> DeadBlocks;
+  for (MachineBasicBlock &MBB : MF) {
+    if (&MBB == EntryBlock)
+      continue;
+    if (MBB.pred_empty())
+      DeadBlocks.push_back(&MBB);
+  }
+  for (MachineBasicBlock *MBB : DeadBlocks) {
+    // Remove all successors first
+    while (!MBB->succ_empty())
+      MBB->removeSuccessor(MBB->succ_begin());
+    MBB->eraseFromParent();
+  }
+
   // ===== Phase 11: Remove spurious add esi, ebx instruction =====
   // This is a leftover buf advance that's redundant after HoistLenSub.
   // The DO16 loop advances buf via add esi,16 each iteration, and the
