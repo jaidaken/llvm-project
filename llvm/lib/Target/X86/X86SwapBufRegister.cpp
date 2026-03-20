@@ -96,7 +96,6 @@ bool X86SwapBufRegisterPass::runOnMachineFunction(MachineFunction &MF) {
   }
 
   // Only swap if EBX is the primary memory base and ESI is not.
-  // This means the allocator put the pointer in EBX when it should be ESI.
   if (ebxBaseUses <= esiBaseUses || ebxBaseUses < 4)
     return false;
 
@@ -108,6 +107,42 @@ bool X86SwapBufRegisterPass::runOnMachineFunction(MachineFunction &MF) {
         Changed |= swapRegInOperand(MO, X86::EBX, X86::ESI,
                                     X86::BL, X86::SIL,
                                     X86::BX, X86::SI);
+      }
+    }
+  }
+
+  // After the ESI<->EBX swap, check if EBP should be swapped with EBX.
+  // MSVC 6.0 puts len in EBX and loop counters in EBP. If EBP is used
+  // more as a general value (CMP, SUB) and EBX is mostly unused or used
+  // as a tail-loop pointer, swap them.
+  // Count: EBP as non-memory-base operand vs EBX as non-memory-base operand.
+  unsigned ebpNonMemUses = 0;
+  unsigned ebxNonMemUses = 0;
+  for (MachineBasicBlock &MBB : MF) {
+    for (MachineInstr &MI : MBB) {
+      for (const MachineOperand &MO : MI.operands()) {
+        if (!MO.isReg())
+          continue;
+        if (MO.getReg() == X86::EBP)
+          ebpNonMemUses++;
+        else if (MO.getReg() == X86::EBX)
+          ebxNonMemUses++;
+      }
+    }
+  }
+
+  // Swap if EBP is heavily used (len parameter) and EBX is lightly used.
+  // This puts len in EBX and frees EBP for loop counters.
+  if (ebpNonMemUses > ebxNonMemUses + 4) {
+    for (MachineBasicBlock &MBB : MF) {
+      for (MachineInstr &MI : MBB) {
+        for (MachineOperand &MO : MI.operands()) {
+          // Note: BPL doesn't exist on i386, only on x86-64.
+          // EBP sub-registers: BP (16-bit). No 8-bit sub-reg on i386.
+          swapRegInOperand(MO, X86::EBX, X86::EBP,
+                           X86::BL, X86::BPL,
+                           X86::BX, X86::BP);
+        }
       }
     }
   }
