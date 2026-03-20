@@ -502,18 +502,12 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
       MI->eraseFromParent();
   }
 
-  // 7d: Create loop exit block with pop ebp between modulo and epilogue
-  MachineBasicBlock *LoopExitBlock = MF.CreateMachineBasicBlock();
-  MF.insert(MF.end(), LoopExitBlock);
-  BuildMI(*LoopExitBlock, LoopExitBlock->end(), DL,
+  // 7d: Insert pop ebp at the start of the epilogue block.
+  // This is the loop exit: when the modulo's "ja outer_loop" falls through
+  // (len==0), pop ebp before the epilogue's return sequence.
+  BuildMI(*EpilogueBlock, EpilogueBlock->begin(), DL,
           TII->get(X86::POP32r), X86::EBP);
-  LoopExitBlock->addSuccessor(EpilogueBlock);
-
-  // Update ModuloBlock: fallthrough goes to LoopExitBlock not EpilogueBlock
-  if (ModuloBlock->isSuccessor(EpilogueBlock)) {
-    ModuloBlock->removeSuccessor(EpilogueBlock, true);
-    ModuloBlock->addSuccessor(LoopExitBlock);
-  }
+  MachineBasicBlock *LoopExitBlock = nullptr; // Not used as separate block
 
   // ===== Phase 8: Full block reorder =====
   MachineBasicBlock *DO16Block = nullptr;
@@ -560,8 +554,7 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
     if (TailLoopBlock != afterTail)
       TailLoopBlock->moveAfter(afterTail);
     ModuloBlock->moveAfter(TailLoopBlock);
-    LoopExitBlock->moveAfter(ModuloBlock);
-    EpilogueBlock->moveAfter(LoopExitBlock);
+    EpilogueBlock->moveAfter(ModuloBlock);
   }
 
   // ===== Phase 9: Remove redundant JMPs to layout successors =====
@@ -642,7 +635,7 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
         MachineBasicBlock *Target = MI.getOperand(0).getMBB();
         MachineBasicBlock *LayoutSucc = ModuloBlock->getNextNode();
         if (Target == LayoutSucc || Target == EpilogueBlock ||
-            Target == LoopExitBlock) {
+            false) {
           // Change from "je epilogue" to "ja OuterLoop"
           MI.getOperand(0).setMBB(OuterLoopBlock);
           // Invert: COND_E -> COND_A (je -> ja)
@@ -674,18 +667,19 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
     MBB->eraseFromParent();
   }
 
-  // ===== Phase 11: Remove spurious add esi, ebx instruction =====
-  // This is a leftover buf advance that's redundant after HoistLenSub.
-  // The DO16 loop advances buf via add esi,16 each iteration, and the
-  // tail loop advances via inc esi. No additional bulk advance needed.
-  for (MachineBasicBlock &MBB : MF) {
-    for (auto I = MBB.begin(); I != MBB.end(); ++I) {
-      if (I->getOpcode() == X86::ADD32rr &&
-          I->getOperand(0).getReg() == X86::ESI &&
-          I->getOperand(2).getReg() == X86::EBX) {
-        I->eraseFromParent();
-        break;
-      }
+  // ===== Phase 11: Clean up blocks between NotNull and OuterLoop =====
+  // Remove all instructions from any block between NotNull and OuterLoop
+  // that only contains JMPs or add esi,ebx. Don't delete the block itself
+  // (to avoid dangling references), just empty it so it becomes a
+  // zero-byte fallthrough.
+  if (OuterLoopBlock) {
+    for (MachineBasicBlock *MBB = NotNullBlock->getNextNode();
+         MBB && MBB != OuterLoopBlock; MBB = MBB->getNextNode()) {
+      SmallVector<MachineInstr *, 8> ToErase;
+      for (MachineInstr &MI : *MBB)
+        ToErase.push_back(&MI);
+      for (MachineInstr *MI : ToErase)
+        MI->eraseFromParent();
     }
   }
 
