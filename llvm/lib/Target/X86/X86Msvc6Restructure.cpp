@@ -220,24 +220,38 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
   // all BEFORE the null test. Our code has these in NotNullBlock.
   // Find and move: MOV32rr ECX,EDI; AND32ri ECX,0xFFFF; SHR32ri EDI,0x10
   {
-    SmallVector<MachineInstr *, 4> ToMove;
+    // Find each instruction individually to enforce correct order:
+    // mov ecx,edi -> and ecx,0xffff -> shr edi,0x10
+    // At this pipeline stage (before PreferAndMask), the s1 extraction
+    // may still be MOVZX32rr16 ECX, DI (not yet expanded to MOV+AND).
+    MachineInstr *Movzx16 = nullptr;
+    MachineInstr *MovCxDi = nullptr;
+    MachineInstr *AndCx = nullptr;
+    MachineInstr *ShrDi = nullptr;
     for (MachineInstr &MI : *NotNullBlock) {
-      // mov ecx, edi
-      if (MI.getOpcode() == X86::MOV32rr &&
+      if (MI.getOpcode() == X86::MOVZX32rr16 &&
+          MI.getOperand(0).getReg() == X86::ECX)
+        Movzx16 = &MI;
+      if ((MI.getOpcode() == X86::MOV32rr || MI.isCopy()) &&
           MI.getOperand(0).getReg() == X86::ECX &&
           MI.getOperand(1).getReg() == X86::EDI)
-        ToMove.push_back(&MI);
-      // and ecx, 0xffff
+        MovCxDi = &MI;
       if (MI.getOpcode() == X86::AND32ri &&
           MI.getOperand(0).getReg() == X86::ECX &&
           MI.getOperand(2).getImm() == 0xFFFF)
-        ToMove.push_back(&MI);
-      // shr edi, 0x10
+        AndCx = &MI;
       if (MI.getOpcode() == X86::SHR32ri &&
           MI.getOperand(0).getReg() == X86::EDI &&
           MI.getOperand(2).getImm() == 0x10)
-        ToMove.push_back(&MI);
+        ShrDi = &MI;
     }
+    SmallVector<MachineInstr *, 4> ToMove;
+    if (Movzx16) ToMove.push_back(Movzx16);
+    else {
+      if (MovCxDi) ToMove.push_back(MovCxDi);
+      if (AndCx) ToMove.push_back(AndCx);
+    }
+    if (ShrDi) ToMove.push_back(ShrDi);
     // Insert AFTER the adler load in the entry block.
     // Order must be: adler load -> mov ecx,edi -> and -> shr -> test -> jne
     // The TEST instruction is already in the entry block as a terminator.
