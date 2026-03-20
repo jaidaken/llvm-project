@@ -513,3 +513,9 @@ def PreferFmulMem : EnumAttr<"PreferFmulMem", IntersectPreserve, [FnAttr]>;
 
 /// Use pop ecx instead of add esp, 4 for cdecl stack cleanup.
 def PreferPopCleanup : EnumAttr<"PreferPopCleanup", IntersectPreserve, [FnAttr]>;
+
+/// Convert MOVZX32rr16 to MOV32rr + AND32ri 0xFFFF to match MSVC 6.0.
+def PreferAndMask : EnumAttr<"PreferAndMask", IntersectPreserve, [FnAttr]>;
+
+/// Convert XOR32rr self-xor + INC32r to MOV32ri reg, 1 to match MSVC 6.0.
+def PreferMovImm : EnumAttr<"PreferMovImm", IntersectPreserve, [FnAttr]>;

@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "X86RegisterInfo.h"
+#include "MCTargetDesc/X86BaseInfo.h"
 #include "X86FrameLowering.h"
 #include "X86MachineFunctionInfo.h"
 #include "X86Subtarget.h"
@@ -1218,6 +1219,23 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
           Hints.push_back(X86::EDX);
       }
 
+      // MSVC 6.0 puts register-to-register zero extensions (x & 0xffff) in
+      // ECX. At regalloc time, ISel pattern (and GR32, 0xffff) produces
+      // MOVZX32rr16. Memory-form MOVZX (byte loads) prefer EDX (above), but
+      // register-form MOVZX16 (mask operations) prefer ECX.
+      bool isRegMovzx16 = false;
+      for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
+        const MachineInstr *MI = MO.getParent();
+        if (MO.isDef() && MI->getOpcode() == X86::MOVZX32rr16) {
+          isRegMovzx16 = true;
+          break;
+        }
+      }
+      if (isRegMovzx16) {
+        if (is_contained(Order, X86::ECX) && !MRI->isReserved(X86::ECX))
+          Hints.push_back(X86::ECX);
+      }
+
       // For long-lived values, prefer EDI then EBX (MSVC 6.0 order)
       bool needsCalleeSaved = false;
       for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
@@ -1236,6 +1254,49 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
           Hints.push_back(X86::EDI);
         if (is_contained(Order, X86::EBX) && !MRI->isReserved(X86::EBX))
           Hints.push_back(X86::EBX);
+      }
+
+      // For cdecl functions: detect vregs used as memory base registers
+      // and hint ESI (MSVC 6.0 puts pointer params in ESI). Also provide
+      // the MSVC callee-saved order as fallback for multi-BB vregs.
+      bool isUsedAsMemBase = false;
+      bool isMultiBB = false;
+      const MachineBasicBlock *FirstBB = nullptr;
+      for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
+        const MachineInstr *MI = MO.getParent();
+        const MachineBasicBlock *BB = MI->getParent();
+        if (!FirstBB)
+          FirstBB = BB;
+        else if (BB != FirstBB)
+          isMultiBB = true;
+        if (MO.isUse()) {
+          int MemOpIdx = X86II::getMemoryOperandNo(MI->getDesc().TSFlags);
+          if (MemOpIdx >= 0) {
+            MemOpIdx += X86II::getOperandBias(MI->getDesc());
+            unsigned BaseIdx = MemOpIdx + X86::AddrBaseReg;
+            if (BaseIdx < MI->getNumOperands() &&
+                MI->getOperand(BaseIdx).isReg() &&
+                MI->getOperand(BaseIdx).getReg() == VirtReg) {
+              isUsedAsMemBase = true;
+            }
+          }
+        }
+      }
+
+      if (isUsedAsMemBase && !isMovzxDest) {
+        if (is_contained(Order, X86::ESI) && !MRI->isReserved(X86::ESI) &&
+            !is_contained(Hints, X86::ESI))
+          Hints.push_back(X86::ESI);
+      }
+
+      if (isMultiBB && !isMovzxDest) {
+        static const MCPhysReg Msvc6CalleeSaved[] = {
+            X86::ESI, X86::EDI, X86::EBX};
+        for (MCPhysReg Reg : Msvc6CalleeSaved) {
+          if (is_contained(Order, Reg) && !MRI->isReserved(Reg) &&
+              !is_contained(Hints, Reg))
+            Hints.push_back(Reg);
+        }
       }
     }
   }

@@ -5081,6 +5081,20 @@ def PreferPopCleanup: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def PreferAndMask: InheritableAttr {
+  let Spellings = [GNU<"prefer_and_mask">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferMovImm: InheritableAttr {
+  let Spellings = [GNU<"prefer_mov_imm">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def Msvc6Sdtor: InheritableAttr {
   let Spellings = [GNU<"msvc6_sdtor">];
   let Args = [StringArgument<"Params">];
