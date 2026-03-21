@@ -58,6 +58,7 @@ set(sources
   X86PreferMovImm.cpp
   X86PreferMovPush.cpp
   X86PreferThiscallReorder.cpp
+  X86PreferBatchPush.cpp
   X86SwapBufRegister.cpp
   X86PreferTripCountLoop.cpp
   X86PreferEarlyBufAdvance.cpp
