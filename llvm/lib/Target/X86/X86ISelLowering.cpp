@@ -60602,7 +60602,8 @@ bool X86TargetLowering::isIntDivCheap(EVT VT, AttributeList Attr) const {
   // size, because it will have to be scalarized, while the alternative code
   // sequence can be performed in vector form.
   bool OptSize = Attr.hasFnAttr(Attribute::MinSize);
-  return OptSize && !VT.isVector();
+  bool ForcedDiv = Attr.hasFnAttr("prefer_div");
+  return (OptSize || ForcedDiv) && !VT.isVector();
 }
 
 void X86TargetLowering::initializeSplitCSR(MachineBasicBlock *Entry) const {

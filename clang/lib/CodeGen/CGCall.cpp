@@ -2423,6 +2423,12 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::PreferFmulMem);
     if (TargetDecl->hasAttr<PreferPopCleanupAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::PreferPopCleanup);
+    if (TargetDecl->hasAttr<PreferAndMaskAttr>())
+      FuncAttrs.addAttribute("prefer_and_mask");
+    if (TargetDecl->hasAttr<PreferMovImmAttr>())
+      FuncAttrs.addAttribute("prefer_mov_imm");
+    if (TargetDecl->hasAttr<PreferDivAttr>())
+      FuncAttrs.addAttribute("prefer_div");
     if (const auto *FCS = TargetDecl->getAttr<ForcedCalleeSavesAttr>())
       FuncAttrs.addAttribute("forced_callee_saves", FCS->getRegisters());
     if (const auto *TB = TargetDecl->getAttr<TrailingBytesAttr>())

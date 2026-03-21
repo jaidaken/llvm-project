@@ -177,6 +177,46 @@ FunctionPass *createX86PreferFmulMemPass();
 /// for functions with the prefer_pop_cleanup attribute.
 FunctionPass *createX86PreferPopCleanupPass();
 
+/// Return a Machine IR pass that converts MOVZX32rr16 to MOV32rr + AND32ri
+/// 0xFFFF for functions with the prefer_and_mask attribute.
+FunctionPass *createX86PreferAndMaskPass();
+
+/// Return a Machine IR pass that converts XOR32rr + INC32r to MOV32ri 1
+/// for functions with the prefer_mov_imm attribute.
+FunctionPass *createX86PreferMovImmPass();
+
+/// Return a Machine IR pass that swaps EBX<->ESI when the primary memory
+/// base is in EBX but MSVC 6.0 expects it in ESI.
+FunctionPass *createX86SwapBufRegisterPass();
+
+/// Return a Machine IR pass that rewrites add/cmp/ja loop latches to
+/// dec ebp/jne with trip count precomputation.
+FunctionPass *createX86PreferTripCountLoopPass();
+
+/// Return a Machine IR pass that hoists pointer advance before loads
+/// and converts positive offsets to negative.
+FunctionPass *createX86PreferEarlyBufAdvancePass();
+
+/// Return a Machine IR pass that interleaves s2 updates across DO16
+/// iterations to match MSVC 6.0's software-pipelined pattern.
+FunctionPass *createX86InterleaveS2UpdatePass();
+
+/// Return a Machine IR pass that hoists len -= k before the DO16 loop
+/// and eliminates stack spills.
+FunctionPass *createX86HoistLenSubPass();
+
+/// Return a Machine IR pass that removes NOP alignment padding from
+/// functions with msvc6_regalloc attribute.
+FunctionPass *createX86StripNopPaddingPass();
+
+/// Return a Machine IR pass that rewrites unsigned JCC conditions to
+/// signed equivalents (jb->jl, ja->jg, etc.).
+FunctionPass *createX86PreferSignedJccPass();
+
+/// Return a Machine IR pass that restructures functions to match MSVC 6.0
+/// block layout, split prologue, and interleaved epilogue.
+FunctionPass *createX86Msvc6RestructurePass();
+
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();
 

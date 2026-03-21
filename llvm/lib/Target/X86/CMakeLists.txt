@@ -54,6 +54,16 @@ set(sources
   X86PreferSeteEcx.cpp
   X86PreferFmulMem.cpp
   X86PreferPopCleanup.cpp
+  X86PreferAndMask.cpp
+  X86PreferMovImm.cpp
+  X86SwapBufRegister.cpp
+  X86PreferTripCountLoop.cpp
+  X86PreferEarlyBufAdvance.cpp
+  X86InterleaveS2Update.cpp
+  X86HoistLenSub.cpp
+  X86StripNopPadding.cpp
+  X86PreferSignedJcc.cpp
+  X86Msvc6Restructure.cpp
   X86FastISel.cpp
   X86FixupBWInsts.cpp
   X86FixupLEAs.cpp
