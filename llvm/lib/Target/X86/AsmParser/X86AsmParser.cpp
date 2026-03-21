@@ -115,6 +115,8 @@ class X86AsmParser : public MCTargetAsmParser {
   bool UseApxExtendedReg = false;
   // Is this instruction explicitly required not to update flags?
   bool ForcedNoFlag = false;
+  // {nooptimize} — prevent short-form instruction optimization (A1/A3 MOV, etc.)
+  bool ForcedNoOptimize = false;
 
 private:
   SMLoc consumeToken() {
@@ -3195,6 +3197,7 @@ bool X86AsmParser::parseInstruction(ParseInstructionInfo &Info, StringRef Name,
   ForcedDispEncoding = DispEncoding_Default;
   UseApxExtendedReg = false;
   ForcedNoFlag = false;
+  ForcedNoOptimize = false;
 
   // Parse pseudo prefixes.
   while (true) {
@@ -3223,6 +3226,8 @@ bool X86AsmParser::parseInstruction(ParseInstructionInfo &Info, StringRef Name,
         ForcedDispEncoding = DispEncoding_Disp8;
       else if (Prefix == "disp32")
         ForcedDispEncoding = DispEncoding_Disp32;
+      else if (Prefix == "nooptimize")
+        ForcedNoOptimize = true;
       else if (Prefix == "nf")
         ForcedNoFlag = true;
       else
@@ -3778,8 +3783,94 @@ bool X86AsmParser::processInstruction(MCInst &Inst, const OperandVector &Ops) {
       X86::optimizeInstFromVEX3ToVEX2(Inst, MII.get(Inst.getOpcode())))
     return true;
 
+  // {nooptimize}: revert short-form MOV instructions (A1/A3) back to the
+  // general ModR/M form (8B/89). This is needed for byte-exact matching of
+  // binaries where the original assembler used the longer encoding.
+  // Short form: MOV32ao32 = A1 addr32 (5 bytes, EAX implicit)
+  // Long form:  MOV32rm   = 8B /r ModRM SIB disp32 (6 bytes, EAX explicit)
+  if (ForcedNoOptimize) {
+    unsigned Opc = Inst.getOpcode();
+    unsigned NewOpc = 0;
+    bool IsLoad = false;
+    switch (Opc) {
+    case X86::MOV8ao32:  NewOpc = X86::MOV8rm;  IsLoad = true; break;
+    case X86::MOV8o32a:  NewOpc = X86::MOV8mr;  break;
+    case X86::MOV16ao32: NewOpc = X86::MOV16rm; IsLoad = true; break;
+    case X86::MOV16o32a: NewOpc = X86::MOV16mr; break;
+    case X86::MOV32ao32: NewOpc = X86::MOV32rm; IsLoad = true; break;
+    case X86::MOV32o32a: NewOpc = X86::MOV32mr; break;
+    default: break;
+    }
+    // Also expand sign-extended imm8 to full immediate (ri8 → ri)
+    // to prevent the assembler from using shorter imm8 encoding.
+    if (!NewOpc) {
+      unsigned LongOpc = X86::getOpcodeForLongImmediateForm(Opc);
+      if (LongOpc != Opc) {
+        Inst.setOpcode(LongOpc);
+      }
+    }
+    if (NewOpc) {
+      // Short form operands: [0]=address, [1]=segment
+      MCOperand Addr = Inst.getOperand(0);
+      MCOperand Seg = Inst.getOperand(1);
+      // Determine the register (AL/AX/EAX based on instruction size)
+      MCRegister Reg;
+      switch (Opc) {
+      case X86::MOV8ao32: case X86::MOV8o32a: Reg = X86::AL; break;
+      case X86::MOV16ao32: case X86::MOV16o32a: Reg = X86::AX; break;
+      default: Reg = X86::EAX; break;
+      }
+      Inst.clear();
+      Inst.setOpcode(NewOpc);
+      if (IsLoad) {
+        // MOVrm: dst_reg, base(0), scale(1), index(0), disp, seg
+        Inst.addOperand(MCOperand::createReg(Reg));
+        Inst.addOperand(MCOperand::createReg(0));  // base
+        Inst.addOperand(MCOperand::createImm(1));   // scale
+        Inst.addOperand(MCOperand::createReg(0));  // index
+        Inst.addOperand(Addr);                      // disp
+        Inst.addOperand(Seg);
+      } else {
+        // MOVmr: base(0), scale(1), index(0), disp, seg, src_reg
+        Inst.addOperand(MCOperand::createReg(0));  // base
+        Inst.addOperand(MCOperand::createImm(1));   // scale
+        Inst.addOperand(MCOperand::createReg(0));  // index
+        Inst.addOperand(Addr);                      // disp
+        Inst.addOperand(Seg);
+        Inst.addOperand(MCOperand::createReg(Reg));
+      }
+    }
+  }
+
   if (X86::optimizeShiftRotateWithImmediateOne(Inst))
     return true;
+
+  // When an ALU immediate instruction has a symbol expression operand,
+  // the matcher may select the ri8 form (sign-extended imm8) because
+  // the unresolved value is 0. But a symbol needs a 4-byte relocation,
+  // so expand ri8 back to ri (imm32), then optimize to the EAX short
+  // form (e.g., CMP32ri → CMP32i32 = opcode 3D, 5 bytes).
+  {
+    unsigned Opc = Inst.getOpcode();
+    unsigned LongOpc = X86::getOpcodeForLongImmediateForm(Opc);
+    if (LongOpc != Opc) {
+      MCOperand &ImmOp = Inst.getOperand(Inst.getNumOperands() - 1);
+      // Expand ri8 → ri for symbol expressions (need 4-byte relocation)
+      // OR when {nooptimize} is set (preserve original long encoding)
+      if (ImmOp.isExpr() || ForcedNoOptimize) {
+        Inst.setOpcode(LongOpc);
+      }
+    }
+    // Run EAX fixed-register optimization (ri → i32, e.g., ADD32ri → ADD32i32).
+    // When {nooptimize}: only do the fixed-register part (keeps long immediate).
+    // Without {nooptimize}: also do short-immediate optimization (ri → ri8).
+    if (ForcedNoOptimize) {
+      // Only convert to EAX short form, don't re-shorten the immediate
+      X86::optimizeToFixedRegisterForm(Inst);
+    } else {
+      X86::optimizeToFixedRegisterOrShortImmediateForm(Inst);
+    }
+  }
 
   auto replaceWithCCMPCTEST = [&](unsigned Opcode) -> bool {
     if (ForcedOpcodePrefix == OpcodePrefix_EVEX) {
@@ -4155,6 +4246,9 @@ bool X86AsmParser::matchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   else if (ForcedDispEncoding == DispEncoding_Disp32)
     Prefixes |= X86::IP_USE_DISP32;
 
+  if (ForcedNoOptimize)
+    Prefixes |= X86::IP_NO_OPTIMIZE;
+
   if (Prefixes)
     Inst.setFlags(Prefixes);
 
@@ -4513,11 +4607,19 @@ bool X86AsmParser::matchAndEmitIntelInstruction(
   if (Mnemonic == "push" && Operands.size() == 2) {
     auto *X86Op = static_cast<X86Operand *>(Operands[1].get());
     if (X86Op->isImm()) {
-      // If it's not a constant fall through and let remainder take care of it.
       const auto *CE = dyn_cast<MCConstantExpr>(X86Op->getImm());
       unsigned Size = getPointerWidth();
+      bool ShouldMatch = false;
       if (CE &&
           (isIntN(Size, CE->getValue()) || isUIntN(Size, CE->getValue()))) {
+        ShouldMatch = true;
+      } else if (!CE) {
+        // Non-constant expression (e.g., push offset symbol).
+        // Force pointer-sized immediate to select the correct PUSH variant
+        // (PUSH32i in 32-bit mode, not PUSH16i8).
+        ShouldMatch = true;
+      }
+      if (ShouldMatch) {
         SmallString<16> Tmp;
         Tmp += Base;
         Tmp += (is64BitMode())
