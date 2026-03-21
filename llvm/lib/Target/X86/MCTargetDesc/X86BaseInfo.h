@@ -64,7 +64,6 @@ enum IPREFIXES {
   IP_USE_EVEX = 1U << 11,
   IP_USE_DISP8 = 1U << 12,
   IP_USE_DISP32 = 1U << 13,
-  IP_NO_OPTIMIZE = 1U << 14,
 };
 
 enum OperandType : unsigned {

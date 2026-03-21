@@ -45,7 +45,7 @@ bool X86PreferSignedJccPass::runOnMachineFunction(MachineFunction &MF) {
   // Only convert after CMP instructions (signed comparisons), NOT after TEST.
   // MSVC uses unsigned jb/jbe/ja after TEST, signed jl/jge after CMP.
 
-  if (!MF.getFunction().hasFnAttribute(Attribute::PreferDiv)) {
+  if (!MF.getFunction().hasFnAttribute("prefer_div")) {
     return false;
   }
 

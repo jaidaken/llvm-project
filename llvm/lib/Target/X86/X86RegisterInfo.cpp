@@ -13,7 +13,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "X86RegisterInfo.h"
-#include "MCTargetDesc/X86BaseInfo.h"
 #include "X86FrameLowering.h"
 #include "X86MachineFunctionInfo.h"
 #include "X86Subtarget.h"
@@ -1197,67 +1196,6 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
       if (is_contained(Order, X86::ESI) && !MRI->isReserved(X86::ESI))
         Hints.push_back(X86::ESI);
     } else {
-      // Do memory-base scan early so we can put ESI at the front of hints.
-      bool isUsedAsMemBase = false;
-      bool isMultiBB = false;
-      const MachineBasicBlock *FirstBB = nullptr;
-      for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
-        const MachineInstr *MI = MO.getParent();
-        const MachineBasicBlock *BB = MI->getParent();
-        if (!FirstBB)
-          FirstBB = BB;
-        else if (BB != FirstBB)
-          isMultiBB = true;
-        if (MO.isUse()) {
-          int MemOpIdx = X86II::getMemoryOperandNo(MI->getDesc().TSFlags);
-          if (MemOpIdx >= 0) {
-            MemOpIdx += X86II::getOperandBias(MI->getDesc());
-            unsigned BaseIdx = MemOpIdx + X86::AddrBaseReg;
-            if (BaseIdx < MI->getNumOperands() &&
-                MI->getOperand(BaseIdx).isReg() &&
-                MI->getOperand(BaseIdx).getReg() == VirtReg) {
-              isUsedAsMemBase = true;
-            }
-          }
-        }
-      }
-
-      // For memory-base vregs, use HardHints to FORCE ESI.
-      // HardHints means the allocator will ONLY consider hinted registers.
-      // If ESI is occupied, the allocator evicts the occupant. This is the
-      // only way to override the greedy allocator's spill weight priority.
-      // Applied to ALL memory-base vregs (not just multi-BB) because at -O2
-      // the main loop vreg may be within a single large basic block.
-      // For memory-base vregs, use HardHints to FORCE ESI. But only for
-      // vregs with many memory-base uses (the main loop pointer). Vregs with
-      // few uses (tail loop pointer) get soft hints to avoid HardHints
-      // conflicts between overlapping live ranges.
-      bool useHardHints = false;
-      unsigned memBaseUseCount = 0;
-      if (isUsedAsMemBase) {
-        for (auto &MO2 : MRI->reg_nodbg_operands(VirtReg)) {
-          const MachineInstr *MI2 = MO2.getParent();
-          if (MO2.isUse()) {
-            int Idx = X86II::getMemoryOperandNo(MI2->getDesc().TSFlags);
-            if (Idx >= 0) {
-              Idx += X86II::getOperandBias(MI2->getDesc());
-              unsigned BIdx = Idx + X86::AddrBaseReg;
-              if (BIdx < MI2->getNumOperands() &&
-                  MI2->getOperand(BIdx).isReg() &&
-                  MI2->getOperand(BIdx).getReg() == VirtReg)
-                memBaseUseCount++;
-            }
-          }
-        }
-        if (is_contained(Order, X86::ESI) && !MRI->isReserved(X86::ESI)) {
-          Hints.insert(Hints.begin(), X86::ESI);
-          // Only use HardHints for the primary memory base (many uses).
-          // Secondary bases (tail loops, 1-2 uses) get soft ESI hints.
-          if (memBaseUseCount >= 4)
-            useHardHints = true;
-        }
-      }
-
       // MSVC 6.0 scratch register order: EAX, EDX, ECX
       // LLVM default order: EAX, ECX, EDX
       // Only hint EDX for virtual registers that are destinations of MOVZX
@@ -1280,23 +1218,6 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
           Hints.push_back(X86::EDX);
       }
 
-      // MSVC 6.0 puts register-to-register zero extensions (x & 0xffff) in
-      // ECX. At regalloc time, ISel pattern (and GR32, 0xffff) produces
-      // MOVZX32rr16. Memory-form MOVZX (byte loads) prefer EDX (above), but
-      // register-form MOVZX16 (mask operations) prefer ECX.
-      bool isRegMovzx16 = false;
-      for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
-        const MachineInstr *MI = MO.getParent();
-        if (MO.isDef() && MI->getOpcode() == X86::MOVZX32rr16) {
-          isRegMovzx16 = true;
-          break;
-        }
-      }
-      if (isRegMovzx16) {
-        if (is_contained(Order, X86::ECX) && !MRI->isReserved(X86::ECX))
-          Hints.push_back(X86::ECX);
-      }
-
       // For long-lived values, prefer EDI then EBX (MSVC 6.0 order)
       bool needsCalleeSaved = false;
       for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
@@ -1316,34 +1237,6 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
         if (is_contained(Order, X86::EBX) && !MRI->isReserved(X86::EBX))
           Hints.push_back(X86::EBX);
       }
-
-      // Provide COMPLETE allocation order as hints for ALL non-memory-base
-      // vregs, explicitly skipping ESI. This prevents ANY vreg from claiming
-      // ESI via the default allocation order fallback. ESI is reserved
-      // exclusively for memory-base vregs via HardHints above.
-      if (!isUsedAsMemBase) {
-        // Full GR32 order minus ESI: EAX,ECX,EDX,EDI,EBX,EBP
-        static const MCPhysReg NoEsiOrder[] = {
-            X86::EAX, X86::ECX, X86::EDX,
-            X86::EDI, X86::EBX, X86::EBP};
-        for (MCPhysReg Reg : NoEsiOrder) {
-          if (is_contained(Order, Reg) && !MRI->isReserved(Reg) &&
-              !is_contained(Hints, Reg))
-            Hints.push_back(Reg);
-        }
-      } else {
-        // Memory-base vregs: ESI already at position 0, add fallbacks
-        static const MCPhysReg MemBaseOrder[] = {X86::EDI, X86::EBX};
-        for (MCPhysReg Reg : MemBaseOrder) {
-          if (is_contained(Order, Reg) && !MRI->isReserved(Reg) &&
-              !is_contained(Hints, Reg))
-            Hints.push_back(Reg);
-        }
-      }
-
-      // Return HardHints for all vregs in msvc6_regalloc functions.
-      // Memory-base vregs hint ESI; all others exclude ESI.
-      return true;
     }
   }
 

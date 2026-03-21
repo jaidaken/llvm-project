@@ -52,7 +52,7 @@ public:
 char X86HoistLenSubPass::ID = 0;
 
 bool X86HoistLenSubPass::runOnMachineFunction(MachineFunction &MF) {
-  if (!MF.getFunction().hasFnAttribute(Attribute::PreferDiv))
+  if (!MF.getFunction().hasFnAttribute("prefer_div"))
     return false;
 
   const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();

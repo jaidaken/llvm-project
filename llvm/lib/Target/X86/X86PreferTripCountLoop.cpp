@@ -48,7 +48,7 @@ public:
 char X86PreferTripCountLoopPass::ID = 0;
 
 bool X86PreferTripCountLoopPass::runOnMachineFunction(MachineFunction &MF) {
-  if (!MF.getFunction().hasFnAttribute(Attribute::PreferDiv))
+  if (!MF.getFunction().hasFnAttribute("prefer_div"))
     return false;
 
   const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();

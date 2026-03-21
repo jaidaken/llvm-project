@@ -52,7 +52,7 @@ static bool isSelfXor32(const MachineInstr &MI) {
 }
 
 bool X86PreferMovImmPass::runOnMachineFunction(MachineFunction &MF) {
-  if (!MF.getFunction().hasFnAttribute(Attribute::PreferMovImm))
+  if (!MF.getFunction().hasFnAttribute("prefer_mov_imm"))
     return false;
 
   const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();

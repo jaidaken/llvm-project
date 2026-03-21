@@ -49,7 +49,7 @@ public:
 char X86PreferAndMaskPass::ID = 0;
 
 bool X86PreferAndMaskPass::runOnMachineFunction(MachineFunction &MF) {
-  if (!MF.getFunction().hasFnAttribute(Attribute::PreferAndMask))
+  if (!MF.getFunction().hasFnAttribute("prefer_and_mask"))
     return false;
 
   const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();

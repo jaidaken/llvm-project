@@ -10,7 +10,7 @@
 // Handles: block layout reordering, split prologue (pushes interleaved
 // with param loads), inline null return, and interleaved epilogue.
 //
-// Gated behind Attribute::PreferDiv.
+// Gated behind "prefer_div".
 //
 //===----------------------------------------------------------------------===//
 
@@ -87,7 +87,7 @@ public:
 char X86Msvc6RestructurePass::ID = 0;
 
 bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
-  if (!MF.getFunction().hasFnAttribute(Attribute::PreferDiv))
+  if (!MF.getFunction().hasFnAttribute("prefer_div"))
     return false;
 
   const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();

@@ -36,7 +36,6 @@ public:
       for (auto &MI : MBB) {
         unsigned NewOpc = 0;
         switch (MI.getOpcode()) {
-        case X86::MOV32rr: NewOpc = X86::MOV32rr_REV; break;
         case X86::ADD32rr: NewOpc = X86::ADD32rr_REV; break;
         case X86::OR32rr:  NewOpc = X86::OR32rr_REV;  break;
         case X86::SUB32rr: NewOpc = X86::SUB32rr_REV; break;

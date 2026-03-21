@@ -393,7 +393,7 @@ bool X86::optimizeMOV(MCInst &MI, bool In64BitMode) {
 
 /// Simplify FOO $imm, %{al,ax,eax,rax} to FOO $imm, for instruction with
 /// a short fixed-register form.
-bool X86::optimizeToFixedRegisterForm(MCInst &MI) {
+static bool optimizeToFixedRegisterForm(MCInst &MI) {
   unsigned NewOpc;
   switch (MI.getOpcode()) {
   default:
@@ -498,6 +498,6 @@ static bool optimizeToShortImmediateForm(MCInst &MI) {
 bool X86::optimizeToFixedRegisterOrShortImmediateForm(MCInst &MI) {
   // We may optimize twice here.
   bool ShortImm = optimizeToShortImmediateForm(MI);
-  bool FixedReg = X86::optimizeToFixedRegisterForm(MI);
+  bool FixedReg = optimizeToFixedRegisterForm(MI);
   return ShortImm || FixedReg;
 }
