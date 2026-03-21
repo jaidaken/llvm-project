@@ -827,6 +827,7 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
   // ===== Phase 9z4a: Split push ebp from OuterLoopBlock =====
   // The "push ebp" should only execute on first entry, not on backedge.
   // Split it into a separate block so "ja" targets the cmp, not push ebp.
+  MachineBasicBlock *PushEBPBlock = nullptr;
   if (OuterLoopBlock) {
     MachineInstr *PushEBP = nullptr;
     for (MachineInstr &MI : *OuterLoopBlock) {
@@ -839,6 +840,7 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
     if (PushEBP) {
       auto SplitPt = std::next(MachineBasicBlock::iterator(PushEBP));
       MachineBasicBlock *OuterLoopBody = MF.CreateMachineBasicBlock();
+      OuterLoopBody->setLabelMustBeEmitted();
       MF.insert(std::next(MachineFunction::iterator(OuterLoopBlock)),
                 OuterLoopBody);
       OuterLoopBody->splice(OuterLoopBody->end(), OuterLoopBlock,
@@ -859,8 +861,47 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
           }
         }
       }
+      // Save PushEBPBlock so Phase 11b can skip it
+      PushEBPBlock = OuterLoopBlock;
       // Update OuterLoopBlock reference for subsequent phases
       OuterLoopBlock = OuterLoopBody;
+    }
+  }
+
+  // ===== Phase 9z4a2: Split pop ebp from EpilogueBlock =====
+  // The "pop ebp" at the start of EpilogueBlock should only execute when
+  // exiting the outer loop (after push ebp). The len==0 "jbe" should skip
+  // pop ebp and go directly to the epilogue return sequence.
+  MachineBasicBlock *PopEBPBlock = nullptr;
+  if (EpilogueBlock) {
+    MachineInstr *PopEBP = nullptr;
+    for (MachineInstr &MI : *EpilogueBlock) {
+      if (MI.getOpcode() == X86::POP32r &&
+          MI.getOperand(0).getReg() == X86::EBP) {
+        PopEBP = &MI;
+        break;
+      }
+    }
+    if (PopEBP) {
+      // Create PopEBPBlock with just "pop ebp", placed before EpilogueBlock
+      PopEBPBlock = MF.CreateMachineBasicBlock();
+      MF.insert(MachineFunction::iterator(EpilogueBlock), PopEBPBlock);
+      // Move pop ebp into the new block
+      PopEBPBlock->splice(PopEBPBlock->end(), EpilogueBlock,
+                          MachineBasicBlock::iterator(PopEBP),
+                          std::next(MachineBasicBlock::iterator(PopEBP)));
+      PopEBPBlock->addSuccessor(EpilogueBlock);
+
+      // The modulo block falls through to PopEBPBlock -> EpilogueBlock.
+      // Update modulo's successor: EpilogueBlock -> PopEBPBlock
+      if (ModuloBlock && ModuloBlock->isSuccessor(EpilogueBlock)) {
+        ModuloBlock->replaceSuccessor(EpilogueBlock, PopEBPBlock);
+      }
+
+      // The len==0 "jbe" from the push-ebx block still targets EpilogueBlock
+      // (which now starts with mov edi,eax). That's correct - it skips pop ebp.
+      // But we need to check: does any block jump to EpilogueBlock that should
+      // now jump to PopEBPBlock? No - only the modulo fallthrough needs pop ebp.
     }
   }
 
@@ -1067,7 +1108,8 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
   SmallVector<MachineBasicBlock *, 4> DeadBlocks;
   for (MachineBasicBlock &MBB : MF) {
     if (&MBB == EntryBlock || &MBB == TailSetupBlock ||
-        &MBB == TailTestBlock || &MBB == TailLoopBlock)
+        &MBB == TailTestBlock || &MBB == TailLoopBlock ||
+        &MBB == PushEBPBlock || &MBB == PopEBPBlock)
       continue;
     if (MBB.pred_empty())
       DeadBlocks.push_back(&MBB);
@@ -1103,10 +1145,12 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
   // Remove all instructions from any block between NotNull and OuterLoop
   // that only contains JMPs or add esi,ebx. Don't delete the block itself
   // (to avoid dangling references), just empty it so it becomes a
-  // zero-byte fallthrough.
+  // zero-byte fallthrough. Skip PushEBPBlock (must keep push ebp).
   if (OuterLoopBlock) {
     for (MachineBasicBlock *MBB = NotNullBlock->getNextNode();
          MBB && MBB != OuterLoopBlock; MBB = MBB->getNextNode()) {
+      if (MBB == PushEBPBlock)
+        continue; // Preserve push ebp
       SmallVector<MachineInstr *, 8> ToErase;
       for (MachineInstr &MI : *MBB)
         ToErase.push_back(&MI);
