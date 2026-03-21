@@ -637,6 +637,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86PreferBatchPushPass());
   addPass(createX86PreferBranchBoolPass());
   addPass(createX86PreferMovAndCmpPass());
+  addPass(createX86MergeReturnZeroPass());
   addPass(createX86PreferThiscallReorderPass());
   addPass(createX86PreferAndMaskPass());
   addPass(createX86ReversedOpsPass());

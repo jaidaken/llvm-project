@@ -75,6 +75,19 @@ bool X86PreferMovAndCmpPass::runOnMachineFunction(MachineFunction &MF) {
       int64_t Mask = MI.getOperand(5).getImm();
       DebugLoc DL = MI.getDebugLoc();
 
+      // Remove preceding XOR32rr EAX,EAX if present (compiler's zero-init).
+      // MSVC doesn't zero-extend before mov al,[mem] in bitfield checks.
+      if (I != MBB.begin()) {
+        auto PrevI = std::prev(I);
+        if ((PrevI->getOpcode() == X86::XOR32rr ||
+             PrevI->getOpcode() == X86::XOR32rr_REV) &&
+            PrevI->getOperand(0).getReg() == X86::EAX &&
+            PrevI->getOperand(1).getReg() == X86::EAX &&
+            PrevI->getOperand(2).getReg() == X86::EAX) {
+          PrevI->eraseFromParent();
+        }
+      }
+
       // Build: MOV8rm AL, [mem]
       auto MovMI = BuildMI(MBB, MI, DL, TII->get(X86::MOV8rm), X86::AL);
       for (unsigned i = 0; i < 5; i++)
@@ -103,6 +116,33 @@ bool X86PreferMovAndCmpPass::runOnMachineFunction(MachineFunction &MF) {
         if (OldCC == X86::COND_NE) NewCC = X86::COND_E;
         else if (OldCC == X86::COND_E) NewCC = X86::COND_NE;
         NextI->getOperand(1).setImm(NewCC);
+      }
+
+      // After the bitfield check, if the fallthrough block loads vtable
+      // into EAX, swap to EDX to match MSVC (preserves AL in EAX).
+      if (NextI != E && NextI->getOpcode() == X86::JCC_1) {
+        MachineBasicBlock *FallMBB = MBB.getNextNode();
+        if (FallMBB && !FallMBB->empty()) {
+          MachineInstr &FirstInst = FallMBB->front();
+          if (FirstInst.getOpcode() == X86::MOV32rm &&
+              FirstInst.getOperand(0).getReg() == X86::EAX &&
+              FirstInst.getNumOperands() >= 6 &&
+              FirstInst.getOperand(1).isReg() &&
+              FirstInst.getOperand(1).getReg() == X86::ECX) {
+            // Swap EAX -> EDX for vtable load and following call
+            FirstInst.getOperand(0).setReg(X86::EDX);
+            for (auto &FI : *FallMBB) {
+              if (FI.isCall()) {
+                for (unsigned j = 0; j < FI.getNumOperands(); j++) {
+                  if (FI.getOperand(j).isReg() &&
+                      FI.getOperand(j).getReg() == X86::EAX)
+                    FI.getOperand(j).setReg(X86::EDX);
+                }
+                break;
+              }
+            }
+          }
+        }
       }
 
       // Remove original TEST8mi
