@@ -202,6 +202,21 @@ bool X86PreferFcompFnstswPass::runOnMachineFunction(MachineFunction &MF) {
 
       if (OldCC == X86::COND_INVALID) { ++I; continue; }
 
+      // When there's no FXCH, folding fld+fucompp into fcomp reverses
+      // the comparison operand order. Invert the condition to compensate.
+      // With FXCH: fucompp compared first_fld with second_fld (same as fcomp).
+      // Without FXCH: fucompp compared second_fld with first_fld (reversed).
+      if (!FxchToRemove && !CondAlreadyReplaced) {
+        switch (OldCC) {
+        case X86::COND_A:  OldCC = X86::COND_B;  break;
+        case X86::COND_AE: OldCC = X86::COND_BE; break;
+        case X86::COND_B:  OldCC = X86::COND_A;  break;
+        case X86::COND_BE: OldCC = X86::COND_AE; break;
+        // Equality is symmetric - no inversion needed
+        default: break;
+        }
+      }
+
       // Map the condition to test ah mask (unless eq/ne already set it)
       if (!CondAlreadyReplaced) {
         if (!mapCondToTestAH(OldCC, Mask, NewCC)) { ++I; continue; }
