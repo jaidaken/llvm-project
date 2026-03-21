@@ -27,12 +27,19 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <cassert>
+#include "llvm/Support/CommandLine.h"
 #include <cstdint>
 #include <cstdlib>
 
 using namespace llvm;
 
 #define DEBUG_TYPE "mccodeemitter"
+
+static cl::opt<bool> X86OpSizeBeforeRepeat(
+    "x86-opsize-before-repeat",
+    cl::desc("Emit operand-size prefix (0x66) before repeat prefix (0xF3) "
+             "to match MSVC assembler ordering"),
+    cl::init(false), cl::Hidden);
 
 namespace {
 
@@ -899,10 +906,21 @@ PrefixKind X86MCCodeEmitter::emitPrefixImpl(unsigned &CurOp, const MCInst &MI,
   }
 
   // Emit the repeat opcode prefix as needed.
+  // With --x86-opsize-before-repeat, emit operand-size (0x66) BEFORE repeat
+  // (0xF3) to match MSVC assembler prefix ordering.
   unsigned Flags = MI.getFlags();
-  if (TSFlags & X86II::REP || Flags & X86::IP_HAS_REPEAT)
+  bool NeedRepeat = (TSFlags & X86II::REP) || (Flags & X86::IP_HAS_REPEAT);
+  bool NeedRepeatNE = Flags & X86::IP_HAS_REPEAT_NE;
+  if (X86OpSizeBeforeRepeat && (NeedRepeat || NeedRepeatNE)) {
+    if ((TSFlags & X86II::OpSizeMask) ==
+        (STI.hasFeature(X86::Is16Bit) ? X86II::OpSize32 : X86II::OpSize16)) {
+      emitByte(0x66, CB);
+      const_cast<MCInst &>(MI).setFlags(Flags | X86::IP_HAS_OP_SIZE);
+    }
+  }
+  if (NeedRepeat)
     emitByte(0xF3, CB);
-  if (Flags & X86::IP_HAS_REPEAT_NE)
+  if (NeedRepeatNE)
     emitByte(0xF2, CB);
 
   // Emit the address size opcode prefix as needed.
@@ -1473,9 +1491,11 @@ PrefixKind X86MCCodeEmitter::emitOpcodePrefix(int MemOperand, const MCInst &MI,
   uint64_t TSFlags = Desc.TSFlags;
 
   // Emit the operand size opcode prefix as needed.
+  // Skip if already emitted before the repeat prefix (--x86-opsize-before-repeat).
   if ((TSFlags & X86II::OpSizeMask) ==
       (STI.hasFeature(X86::Is16Bit) ? X86II::OpSize32 : X86II::OpSize16))
-    emitByte(0x66, CB);
+    if (!(MI.getFlags() & X86::IP_HAS_OP_SIZE))
+      emitByte(0x66, CB);
 
   // Emit the LOCK opcode prefix.
   if (TSFlags & X86II::LOCK || MI.getFlags() & X86::IP_HAS_LOCK)
