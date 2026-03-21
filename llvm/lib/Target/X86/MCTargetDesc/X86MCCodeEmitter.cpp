@@ -898,11 +898,25 @@ PrefixKind X86MCCodeEmitter::emitPrefixImpl(unsigned &CurOp, const MCInst &MI,
     emitSegmentOverridePrefix(MemoryOperand + X86::AddrSegmentReg, MI, CB);
   }
 
-  // Emit the repeat opcode prefix as needed.
+  // Emit the operand size prefix BEFORE repeat prefix to match MSVC
+  // assembler prefix ordering (0x66 before 0xF3).
   unsigned Flags = MI.getFlags();
-  if (TSFlags & X86II::REP || Flags & X86::IP_HAS_REPEAT)
+  bool NeedRepeat = (TSFlags & X86II::REP) || (Flags & X86::IP_HAS_REPEAT);
+  bool NeedRepeatNE = Flags & X86::IP_HAS_REPEAT_NE;
+  if (NeedRepeat || NeedRepeatNE) {
+    // Emit operand-size prefix first if this instruction has one
+    if ((TSFlags & X86II::OpSizeMask) ==
+        (STI.hasFeature(X86::Is16Bit) ? X86II::OpSize32 : X86II::OpSize16)) {
+      emitByte(0x66, CB);
+      // Mark that we already emitted it (set flag in Flags to skip later)
+      const_cast<MCInst &>(MI).setFlags(Flags | X86::IP_HAS_OP_SIZE);
+    }
+  }
+
+  // Emit the repeat opcode prefix as needed.
+  if (NeedRepeat)
     emitByte(0xF3, CB);
-  if (Flags & X86::IP_HAS_REPEAT_NE)
+  if (NeedRepeatNE)
     emitByte(0xF2, CB);
 
   // Emit the address size opcode prefix as needed.
@@ -1473,9 +1487,11 @@ PrefixKind X86MCCodeEmitter::emitOpcodePrefix(int MemOperand, const MCInst &MI,
   uint64_t TSFlags = Desc.TSFlags;
 
   // Emit the operand size opcode prefix as needed.
+  // Skip if already emitted before the repeat prefix in emitPrefixImpl.
   if ((TSFlags & X86II::OpSizeMask) ==
       (STI.hasFeature(X86::Is16Bit) ? X86II::OpSize32 : X86II::OpSize16))
-    emitByte(0x66, CB);
+    if (!(MI.getFlags() & X86::IP_HAS_OP_SIZE))
+      emitByte(0x66, CB);
 
   // Emit the LOCK opcode prefix.
   if (TSFlags & X86II::LOCK || MI.getFlags() & X86::IP_HAS_LOCK)

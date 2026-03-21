@@ -824,7 +824,72 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
     }
   }
 
-  // ===== Phase 9z5: Redirect skip-DO16 jl to TailLoopBlock =====
+  // ===== Phase 9z4a: Split push ebp from OuterLoopBlock =====
+  // The "push ebp" should only execute on first entry, not on backedge.
+  // Split it into a separate block so "ja" targets the cmp, not push ebp.
+  if (OuterLoopBlock) {
+    MachineInstr *PushEBP = nullptr;
+    for (MachineInstr &MI : *OuterLoopBlock) {
+      if (MI.getOpcode() == X86::PUSH32r &&
+          MI.getOperand(0).getReg() == X86::EBP) {
+        PushEBP = &MI;
+        break;
+      }
+    }
+    if (PushEBP) {
+      auto SplitPt = std::next(MachineBasicBlock::iterator(PushEBP));
+      MachineBasicBlock *OuterLoopBody = MF.CreateMachineBasicBlock();
+      MF.insert(std::next(MachineFunction::iterator(OuterLoopBlock)),
+                OuterLoopBody);
+      OuterLoopBody->splice(OuterLoopBody->end(), OuterLoopBlock,
+                            SplitPt, OuterLoopBlock->end());
+      OuterLoopBody->transferSuccessorsAndUpdatePHIs(OuterLoopBlock);
+      OuterLoopBlock->addSuccessor(OuterLoopBody);
+
+      // Update the modulo's "ja" to target OuterLoopBody (not OuterLoopBlock)
+      if (ModuloBlock) {
+        for (MachineInstr &MI : *ModuloBlock) {
+          if (MI.isConditionalBranch() && MI.getOperand(0).isMBB() &&
+              MI.getOperand(0).getMBB() == OuterLoopBlock) {
+            MI.getOperand(0).setMBB(OuterLoopBody);
+            if (ModuloBlock->isSuccessor(OuterLoopBlock)) {
+              ModuloBlock->replaceSuccessor(OuterLoopBlock, OuterLoopBody);
+            }
+            break;
+          }
+        }
+      }
+      // Update OuterLoopBlock reference for subsequent phases
+      OuterLoopBlock = OuterLoopBody;
+    }
+  }
+
+  // ===== Phase 9z4b: Fix trip count remainder register (EBX -> EAX) =====
+  // The trip count "add ebx, edx" should be "add eax, edx" to match MSVC.
+  // Search all blocks between OuterLoop and DO16 for this instruction.
+  for (MachineBasicBlock &MBB : MF) {
+    for (MachineInstr &MI : MBB) {
+      if ((MI.getOpcode() == X86::ADD32rr || MI.getOpcode() == X86::ADD32rr_REV) &&
+          MI.getOperand(0).getReg() == X86::EBX &&
+          MI.getOperand(2).getReg() == X86::EDX) {
+        // Check if this is preceded by SHL32ri EDX, 4 (trip count pattern)
+        auto It = MachineBasicBlock::iterator(&MI);
+        if (It != MBB.begin()) {
+          --It;
+          if (It->getOpcode() == X86::SHL32ri &&
+              It->getOperand(0).getReg() == X86::EDX &&
+              It->getOperand(2).getImm() == 4) {
+            MI.getOperand(0).setReg(X86::EAX);
+            MI.getOperand(1).setReg(X86::EAX);
+            goto done_trip_fix;
+          }
+        }
+      }
+    }
+  }
+  done_trip_fix:;
+
+  // ===== Phase 9z5: Redirect skip-DO16 jl to TailTestBlock =====
   // The LAST jl/jb from the SubBlock targets TailSetupBlock (now empty).
   // Redirect it to TailLoopBlock. Only change the LAST such JCC (skip-DO16),
   // NOT the first one (NMAX clamp jb which targets SubBlock, not TailSetup).
