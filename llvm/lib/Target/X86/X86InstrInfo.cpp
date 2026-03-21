@@ -3169,6 +3169,14 @@ bool X86InstrInfo::hasCommutePreference(MachineInstr &MI, bool &Commute) const {
     }
   }
 
+  // bw1-decomp: Suppress ADD32rr commuting for adler32 (prefer_div).
+  // MSVC 6.0 always accumulates into the first operand.
+  const MachineFunction *MFn = MI.getParent()->getParent();
+  if (MFn->getFunction().hasFnAttribute("prefer_div")) {
+    Commute = false;
+    return true;
+  }
+
   return false;
 }
 

@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "X86RegisterInfo.h"
+#include "MCTargetDesc/X86BaseInfo.h"
 #include "X86FrameLowering.h"
 #include "X86MachineFunctionInfo.h"
 #include "X86Subtarget.h"
@@ -1178,6 +1179,7 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
   // (copied from ECX at function entry) to prefer ESI. Other callee-saved
   // values prefer EDI, then EBX, matching MSVC 6.0's allocation order.
   if (MF.getFunction().hasFnAttribute(llvm::Attribute::Msvc6RegAlloc) &&
+      !MF.getFunction().hasFnAttribute("prefer_div") &&
       TRI.isGeneralPurposeRegisterClass(&RC) &&
       VirtReg.isVirtual()) {
     // Find if VirtReg is copied from ECX at function entry
@@ -1237,6 +1239,109 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
         if (is_contained(Order, X86::EBX) && !MRI->isReserved(X86::EBX))
           Hints.push_back(X86::EBX);
       }
+    }
+  }
+
+  // bw1-decomp: Extended register hints for adler32 (prefer_div).
+  // Forces ESI for memory-base vregs via HardHints, excludes ESI from
+  // all other vregs, and suppresses ADD32rr commuting.
+  if (MF.getFunction().hasFnAttribute("prefer_div") &&
+      TRI.isGeneralPurposeRegisterClass(&RC) &&
+      VirtReg.isVirtual()) {
+    bool isCopyFromECX = false;
+    for (auto &MO : MRI->def_operands(VirtReg)) {
+      const MachineInstr *MI = MO.getParent();
+      if (MI->isCopy() && MI->getOperand(1).isReg() &&
+          MI->getOperand(1).getReg() == X86::ECX) {
+        isCopyFromECX = true;
+        break;
+      }
+    }
+    if (isCopyFromECX) {
+      if (is_contained(Order, X86::ESI) && !MRI->isReserved(X86::ESI))
+        Hints.push_back(X86::ESI);
+    } else {
+      bool isUsedAsMemBase = false;
+      for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
+        const MachineInstr *MI = MO.getParent();
+        if (MO.isUse()) {
+          int MemOpIdx = X86II::getMemoryOperandNo(MI->getDesc().TSFlags);
+          if (MemOpIdx >= 0) {
+            MemOpIdx += X86II::getOperandBias(MI->getDesc());
+            unsigned BaseIdx = MemOpIdx + X86::AddrBaseReg;
+            if (BaseIdx < MI->getNumOperands() &&
+                MI->getOperand(BaseIdx).isReg() &&
+                MI->getOperand(BaseIdx).getReg() == VirtReg)
+              isUsedAsMemBase = true;
+          }
+        }
+      }
+      bool useHardHints = false;
+      if (isUsedAsMemBase) {
+        unsigned memBaseUseCount = 0;
+        for (auto &MO2 : MRI->reg_nodbg_operands(VirtReg)) {
+          if (MO2.isUse()) {
+            const MachineInstr *MI2 = MO2.getParent();
+            int Idx = X86II::getMemoryOperandNo(MI2->getDesc().TSFlags);
+            if (Idx >= 0) {
+              Idx += X86II::getOperandBias(MI2->getDesc());
+              unsigned BIdx = Idx + X86::AddrBaseReg;
+              if (BIdx < MI2->getNumOperands() &&
+                  MI2->getOperand(BIdx).isReg() &&
+                  MI2->getOperand(BIdx).getReg() == VirtReg)
+                memBaseUseCount++;
+            }
+          }
+        }
+        if (is_contained(Order, X86::ESI) && !MRI->isReserved(X86::ESI)) {
+          Hints.insert(Hints.begin(), X86::ESI);
+          if (memBaseUseCount >= 4)
+            useHardHints = true;
+        }
+      }
+      bool isMovzxDest = false;
+      for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
+        const MachineInstr *MI = MO.getParent();
+        unsigned Opc = MI->getOpcode();
+        if (MO.isDef() && (Opc == X86::MOVZX32rm8 || Opc == X86::MOVZX32rm16 ||
+                           Opc == X86::MOVZX32rr8 || Opc == X86::MOVZX32rr16)) {
+          isMovzxDest = true;
+          break;
+        }
+      }
+      if (isMovzxDest) {
+        if (is_contained(Order, X86::EDX) && !MRI->isReserved(X86::EDX))
+          Hints.push_back(X86::EDX);
+      }
+      bool isRegMovzx16 = false;
+      for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
+        if (MO.isDef() && MO.getParent()->getOpcode() == X86::MOVZX32rr16) {
+          isRegMovzx16 = true;
+          break;
+        }
+      }
+      if (isRegMovzx16) {
+        if (is_contained(Order, X86::ECX) && !MRI->isReserved(X86::ECX))
+          Hints.push_back(X86::ECX);
+      }
+      if (!isUsedAsMemBase) {
+        static const MCPhysReg NoEsiOrder[] = {
+            X86::EAX, X86::ECX, X86::EDX,
+            X86::EDI, X86::EBX, X86::EBP};
+        for (MCPhysReg Reg : NoEsiOrder) {
+          if (is_contained(Order, Reg) && !MRI->isReserved(Reg) &&
+              !is_contained(Hints, Reg))
+            Hints.push_back(Reg);
+        }
+      } else {
+        static const MCPhysReg MemBaseOrder[] = {X86::EDI, X86::EBX};
+        for (MCPhysReg Reg : MemBaseOrder) {
+          if (is_contained(Order, Reg) && !MRI->isReserved(Reg) &&
+              !is_contained(Hints, Reg))
+            Hints.push_back(Reg);
+        }
+      }
+      return useHardHints;
     }
   }
 
