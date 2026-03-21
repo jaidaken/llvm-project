@@ -184,6 +184,7 @@ FunctionPass *createX86PreferMovPushPass();
 FunctionPass *createX86PreferThiscallReorderPass();
 FunctionPass *createX86PreferBatchPushPass();
 FunctionPass *createX86PreferBranchBoolPass();
+FunctionPass *createX86PreferMovAndCmpPass();
 
 /// Return a Machine IR pass that converts XOR32rr + INC32r to MOV32ri 1
 /// for functions with the prefer_mov_imm attribute.

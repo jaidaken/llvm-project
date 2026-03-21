@@ -60,6 +60,7 @@ set(sources
   X86PreferThiscallReorder.cpp
   X86PreferBatchPush.cpp
   X86PreferBranchBool.cpp
+  X86PreferMovAndCmp.cpp
   X86SwapBufRegister.cpp
   X86PreferTripCountLoop.cpp
   X86PreferEarlyBufAdvance.cpp
