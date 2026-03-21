@@ -82,50 +82,82 @@ bool X86PreferBranchBoolPass::runOnMachineFunction(MachineFunction &MF) {
 
   for (MachineBasicBlock &MBB : MF) {
     for (auto I = MBB.begin(), E = MBB.end(); I != E; ) {
-      // Pattern: XOR32rr reg, reg; SETCCr reg_lo, CC; MOV32rr EAX, reg; RET/RETI
-      MachineInstr &Xor = *I;
-      if (Xor.getOpcode() != X86::XOR32rr &&
-          Xor.getOpcode() != X86::XOR32rr_REV) {
-        ++I;
-        continue;
+      // Pattern 1: XOR32rr reg, reg; SETCCr reg_lo; MOV32rr EAX, reg; RET
+      // Pattern 2: MOV32ri EAX, 0; SETCCr AL; RET
+      MachineInstr &ZeroInst = *I;
+
+      X86::CondCode CC = X86::COND_INVALID;
+      MachineBasicBlock::iterator SetI, RetI;
+      SmallVector<MachineInstr *, 4> ToRemove;
+
+      // Try pattern 1: XOR32rr + SETCCr + MOV32rr EAX + RET
+      if (ZeroInst.getOpcode() == X86::XOR32rr ||
+          ZeroInst.getOpcode() == X86::XOR32rr_REV) {
+        if (ZeroInst.getOperand(1).getReg() != ZeroInst.getOperand(2).getReg()) {
+          ++I; continue;
+        }
+        Register ZeroReg = ZeroInst.getOperand(0).getReg();
+        MCPhysReg ZeroReg8 = get8bitSubReg(ZeroReg);
+        if (!ZeroReg8) { ++I; continue; }
+
+        SetI = std::next(I);
+        if (SetI == E || SetI->getOpcode() != X86::SETCCr ||
+            SetI->getOperand(0).getReg() != ZeroReg8) {
+          ++I; continue;
+        }
+        CC = X86::getCondFromSETCC(*SetI);
+
+        auto MovI = std::next(SetI);
+        if (MovI == E) { ++I; continue; }
+        if ((MovI->getOpcode() != X86::MOV32rr &&
+             MovI->getOpcode() != X86::MOV32rr_REV) ||
+            MovI->getOperand(0).getReg() != X86::EAX ||
+            MovI->getOperand(1).getReg() != ZeroReg) {
+          ++I; continue;
+        }
+
+        RetI = std::next(MovI);
+        ToRemove = {&ZeroInst, &*SetI, &*MovI};
       }
-      if (Xor.getOperand(1).getReg() != Xor.getOperand(2).getReg()) {
-        ++I;
-        continue;
+      // Try pattern 2: MOV32ri EAX, 0; SETCCr AL; RET
+      else if (ZeroInst.getOpcode() == X86::MOV32ri &&
+               ZeroInst.getOperand(0).getReg() == X86::EAX &&
+               ZeroInst.getOperand(1).isImm() &&
+               ZeroInst.getOperand(1).getImm() == 0) {
+        SetI = std::next(I);
+        if (SetI == E || SetI->getOpcode() != X86::SETCCr ||
+            SetI->getOperand(0).getReg() != X86::AL) {
+          ++I; continue;
+        }
+        CC = X86::getCondFromSETCC(*SetI);
+
+        RetI = std::next(SetI);
+        ToRemove = {&ZeroInst, &*SetI};
+      }
+      else {
+        ++I; continue;
       }
 
-      Register ZeroReg = Xor.getOperand(0).getReg();
-      MCPhysReg ZeroReg8 = get8bitSubReg(ZeroReg);
-      if (!ZeroReg8) { ++I; continue; }
-
-      auto SetI = std::next(I);
-      if (SetI == E) { ++I; continue; }
-
-      if (SetI->getOpcode() != X86::SETCCr) { ++I; continue; }
-      if (SetI->getOperand(0).getReg() != ZeroReg8) { ++I; continue; }
-
-      X86::CondCode CC = X86::getCondFromSETCC(*SetI);
       if (CC == X86::COND_INVALID) { ++I; continue; }
 
-      auto MovI = std::next(SetI);
-      if (MovI == E) { ++I; continue; }
-
-      // Match MOV32rr EAX, reg or MOV32rr_REV EAX, reg
-      if (MovI->getOpcode() != X86::MOV32rr &&
-          MovI->getOpcode() != X86::MOV32rr_REV) {
-        ++I;
-        continue;
+      // Find the RET: must be next in same block
+      bool IsRet = false;
+      if (RetI != E) {
+        IsRet = (RetI->getOpcode() == X86::RET ||
+                 RetI->getOpcode() == X86::RET32 ||
+                 RetI->getOpcode() == X86::RETI32 ||
+                 RetI->isReturn());
       }
-      if (MovI->getOperand(0).getReg() != X86::EAX) { ++I; continue; }
-      if (MovI->getOperand(1).getReg() != ZeroReg) { ++I; continue; }
-
-      auto RetI = std::next(MovI);
-      if (RetI == E) { ++I; continue; }
-
-      bool IsRet = (RetI->getOpcode() == X86::RET ||
-                    RetI->getOpcode() == X86::RET32 ||
-                    RetI->getOpcode() == X86::RETI32 ||
-                    RetI->isReturn());
+      // Also check: setcc is last instruction and block falls through to ret
+      if (!IsRet && RetI == E) {
+        MachineBasicBlock *NextMBB = MBB.getNextNode();
+        if (NextMBB && !NextMBB->empty() && NextMBB->front().isReturn() &&
+            NextMBB->pred_size() > 0) {
+          // The ret is in the successor. Clone it into our new false block.
+          RetI = NextMBB->front().getIterator();
+          IsRet = true;
+        }
+      }
       if (!IsRet) { ++I; continue; }
 
       // We have the full pattern. Rewrite to branch form.
@@ -133,7 +165,7 @@ bool X86PreferBranchBoolPass::runOnMachineFunction(MachineFunction &MF) {
       X86::CondCode InvCC = invertCC(CC);
       if (InvCC == X86::COND_INVALID) { ++I; continue; }
 
-      DebugLoc DL = Xor.getDebugLoc();
+      DebugLoc DL = ZeroInst.getDebugLoc();
 
       // Create false block after current block
       MachineBasicBlock *FalseMBB = MF.CreateMachineBasicBlock();
@@ -144,41 +176,48 @@ bool X86PreferBranchBoolPass::runOnMachineFunction(MachineFunction &MF) {
       // But first, clone the ret for the true path
       unsigned RetOpc = RetI->getOpcode();
 
+      // Insert point is before the first instruction to remove
+      MachineInstr *InsertBefore = ToRemove[0];
+
       // Build in current block: JCC FalseMBB, inverted_CC; MOV32ri EAX, 1; RET
-      BuildMI(MBB, Xor, DL, TII->get(X86::JCC_1))
+      BuildMI(MBB, *InsertBefore, DL, TII->get(X86::JCC_1))
           .addMBB(FalseMBB)
           .addImm(InvCC);
-      BuildMI(MBB, Xor, DL, TII->get(X86::MOV32ri), X86::EAX)
+      BuildMI(MBB, *InsertBefore, DL, TII->get(X86::MOV32ri), X86::EAX)
           .addImm(1);
-      // Clone the RET for the true path (before the xor/setcc/mov we'll delete)
+      // Clone the RET for the true path
       {
-        auto TrueRet = BuildMI(MBB, Xor, DL, TII->get(RetI->getOpcode()));
+        auto TrueRet = BuildMI(MBB, *InsertBefore, DL, TII->get(RetI->getOpcode()));
         for (const auto &MO : RetI->operands())
           TrueRet.add(MO);
       }
 
       // Build in false block: XOR32rr EAX, EAX
-      // The false block falls through or has its own ret
       BuildMI(*FalseMBB, FalseMBB->end(), DL,
               TII->get(X86::XOR32rr_REV), X86::EAX)
           .addReg(X86::EAX, RegState::Undef)
           .addReg(X86::EAX, RegState::Undef);
 
-      // Transfer successors from current block to false block
-      // and add FalseMBB as successor of current block
+      // Transfer successors and add false block
       FalseMBB->transferSuccessorsAndUpdatePHIs(&MBB);
       MBB.addSuccessor(FalseMBB);
 
-      // Move the RET and everything after it to the false block
-      FalseMBB->splice(FalseMBB->end(), &MBB, RetI, MBB.end());
+      // Move or clone the RET into the false block
+      if (RetI->getParent() == &MBB) {
+        // RET is in our block - move it and everything after
+        FalseMBB->splice(FalseMBB->end(), &MBB, RetI, MBB.end());
+      } else {
+        // RET is in successor block - clone it
+        auto ClonedRet = BuildMI(*FalseMBB, FalseMBB->end(), DL,
+                                  TII->get(RetI->getOpcode()));
+        for (const auto &MO : RetI->operands())
+          ClonedRet.add(MO);
+      }
 
-      // Remove old xor, setcc, mov (they're now replaced by jcc + mov eax,1)
-      MovI->eraseFromParent();
-      SetI->eraseFromParent();
-      I = Xor.getIterator();
-      auto NextI = std::next(I);
-      Xor.eraseFromParent();
-      I = NextI;
+      // Remove old instructions
+      for (MachineInstr *MI : ToRemove)
+        MI->eraseFromParent();
+      I = MBB.begin(); // restart scan
 
       Changed = true;
       break; // restart the block scan since we modified the block
