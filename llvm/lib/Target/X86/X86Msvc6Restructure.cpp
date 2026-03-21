@@ -842,12 +842,21 @@ bool X86Msvc6RestructurePass::runOnMachineFunction(MachineFunction &MF) {
       }
       if (SB) break;
     }
-    if (SB) {
+    if (SB && TailTestBlock) {
+      // Find the JCC (jl or jb) in SubBlock and redirect to TailTestBlock
       for (MachineInstr &MI : *SB) {
-        if (MI.isConditionalBranch() && MI.getOperand(0).isMBB() &&
-            MI.getOperand(0).getMBB() == TailSetupBlock) {
-          MI.getOperand(0).setMBB(TailLoopBlock);
-          break;
+        if (MI.isConditionalBranch() && MI.getOperand(0).isMBB()) {
+          int64_t CC = MI.getOperand(1).getImm();
+          if (CC == X86::COND_L || CC == X86::COND_B) {
+            MachineBasicBlock *OldTarget = MI.getOperand(0).getMBB();
+            MI.getOperand(0).setMBB(TailTestBlock);
+            // Update successor list
+            if (SB->isSuccessor(OldTarget))
+              SB->replaceSuccessor(OldTarget, TailTestBlock);
+            else
+              SB->addSuccessor(TailTestBlock);
+            break;
+          }
         }
       }
     }
