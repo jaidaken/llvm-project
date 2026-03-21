@@ -2072,6 +2072,11 @@ X86TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
       isTailCall = false;
   }
 
+  // bw1-decomp: MSVC 6.0 never optimizes call+ret into jmp.
+  if (isTailCall && !IsMustTail &&
+      MF.getFunction().hasFnAttribute("no_tail_call"))
+    isTailCall = false;
+
   if (isTailCall && !IsMustTail) {
     // Check if it's really possible to do a tail call.
     isTailCall = IsEligibleForTailCallOptimization(CLI, CCInfo, ArgLocs,

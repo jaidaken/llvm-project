@@ -5102,6 +5102,13 @@ def PreferDiv: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def NoTailCall: InheritableAttr {
+  let Spellings = [GNU<"no_tail_call">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def Msvc6Sdtor: InheritableAttr {
   let Spellings = [GNU<"msvc6_sdtor">];
   let Args = [StringArgument<"Params">];
