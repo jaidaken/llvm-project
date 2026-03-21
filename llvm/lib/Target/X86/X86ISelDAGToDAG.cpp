@@ -665,11 +665,15 @@ bool X86DAGToDAGISel::isMaskZeroExtended(SDNode *N) const {
 
 bool
 X86DAGToDAGISel::IsProfitableToFold(SDValue N, SDNode *U, SDNode *Root) const {
+  // bw1-decomp: For prefer_div (adler32), disable ALL folding to match the
+  // ISel output that the register allocation hints were tuned against.
+  if (MF->getFunction().hasFnAttribute("prefer_div"))
+    return false;
+
   // bw1-decomp: Disable load folding to match MSVC 6.0 codegen.
   // This prevents test reg,reg -> cmp [mem],0 and similar transformations.
   // EXCEPTION: Allow load folding when the Root is a call-like node,
-  // because blocking it causes the DAG scheduler to crash on indirect calls
-  // (SmallVector overflow in SUnit::ComputeHeight).
+  // because blocking it causes ISel to produce $noreg for indirect calls.
   if (N.getOpcode() == ISD::LOAD) {
     if (Root) {
       unsigned RootOpc = Root->getOpcode();

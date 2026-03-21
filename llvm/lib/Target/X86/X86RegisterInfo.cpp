@@ -1242,12 +1242,16 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
     }
   }
 
-  // bw1-decomp: Extended register hints for adler32 (prefer_div).
-  // Forces ESI for memory-base vregs via HardHints, excludes ESI from
-  // all other vregs, and suppresses ADD32rr commuting.
+
+
+  // bw1-decomp: MSVC 6.0 register allocation preferences.
+  // When msvc6_regalloc is set, hint the this-pointer virtual register
+  // (copied from ECX at function entry) to prefer ESI. Other callee-saved
+  // values prefer EDI, then EBX, matching MSVC 6.0's allocation order.
   if (MF.getFunction().hasFnAttribute("prefer_div") &&
       TRI.isGeneralPurposeRegisterClass(&RC) &&
       VirtReg.isVirtual()) {
+    // Find if VirtReg is copied from ECX at function entry
     bool isCopyFromECX = false;
     for (auto &MO : MRI->def_operands(VirtReg)) {
       const MachineInstr *MI = MO.getParent();
@@ -1257,13 +1261,23 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
         break;
       }
     }
+
     if (isCopyFromECX) {
+      // This is the this-pointer: strongly prefer ESI
       if (is_contained(Order, X86::ESI) && !MRI->isReserved(X86::ESI))
         Hints.push_back(X86::ESI);
     } else {
+      // Do memory-base scan early so we can put ESI at the front of hints.
       bool isUsedAsMemBase = false;
+      bool isMultiBB = false;
+      const MachineBasicBlock *FirstBB = nullptr;
       for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
         const MachineInstr *MI = MO.getParent();
+        const MachineBasicBlock *BB = MI->getParent();
+        if (!FirstBB)
+          FirstBB = BB;
+        else if (BB != FirstBB)
+          isMultiBB = true;
         if (MO.isUse()) {
           int MemOpIdx = X86II::getMemoryOperandNo(MI->getDesc().TSFlags);
           if (MemOpIdx >= 0) {
@@ -1271,17 +1285,29 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
             unsigned BaseIdx = MemOpIdx + X86::AddrBaseReg;
             if (BaseIdx < MI->getNumOperands() &&
                 MI->getOperand(BaseIdx).isReg() &&
-                MI->getOperand(BaseIdx).getReg() == VirtReg)
+                MI->getOperand(BaseIdx).getReg() == VirtReg) {
               isUsedAsMemBase = true;
+            }
           }
         }
       }
+
+      // For memory-base vregs, use HardHints to FORCE ESI.
+      // HardHints means the allocator will ONLY consider hinted registers.
+      // If ESI is occupied, the allocator evicts the occupant. This is the
+      // only way to override the greedy allocator's spill weight priority.
+      // Applied to ALL memory-base vregs (not just multi-BB) because at -O2
+      // the main loop vreg may be within a single large basic block.
+      // For memory-base vregs, use HardHints to FORCE ESI. But only for
+      // vregs with many memory-base uses (the main loop pointer). Vregs with
+      // few uses (tail loop pointer) get soft hints to avoid HardHints
+      // conflicts between overlapping live ranges.
       bool useHardHints = false;
+      unsigned memBaseUseCount = 0;
       if (isUsedAsMemBase) {
-        unsigned memBaseUseCount = 0;
         for (auto &MO2 : MRI->reg_nodbg_operands(VirtReg)) {
+          const MachineInstr *MI2 = MO2.getParent();
           if (MO2.isUse()) {
-            const MachineInstr *MI2 = MO2.getParent();
             int Idx = X86II::getMemoryOperandNo(MI2->getDesc().TSFlags);
             if (Idx >= 0) {
               Idx += X86II::getOperandBias(MI2->getDesc());
@@ -1295,10 +1321,20 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
         }
         if (is_contained(Order, X86::ESI) && !MRI->isReserved(X86::ESI)) {
           Hints.insert(Hints.begin(), X86::ESI);
+          // Only use HardHints for the primary memory base (many uses).
+          // Secondary bases (tail loops, 1-2 uses) get soft ESI hints.
           if (memBaseUseCount >= 4)
             useHardHints = true;
         }
       }
+
+      // MSVC 6.0 scratch register order: EAX, EDX, ECX
+      // LLVM default order: EAX, ECX, EDX
+      // Only hint EDX for virtual registers that are destinations of MOVZX
+      // instructions. This avoids the overlap problem where expand_movzx
+      // can't fire because dest==base (movzx ecx, [ecx+N]).
+      // Don't hint EDX globally — that makes the compiler use EDX for
+      // unrelated values (like info pointer loads) that should stay in EAX.
       bool isMovzxDest = false;
       for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
         const MachineInstr *MI = MO.getParent();
@@ -1313,9 +1349,15 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
         if (is_contained(Order, X86::EDX) && !MRI->isReserved(X86::EDX))
           Hints.push_back(X86::EDX);
       }
+
+      // MSVC 6.0 puts register-to-register zero extensions (x & 0xffff) in
+      // ECX. At regalloc time, ISel pattern (and GR32, 0xffff) produces
+      // MOVZX32rr16. Memory-form MOVZX (byte loads) prefer EDX (above), but
+      // register-form MOVZX16 (mask operations) prefer ECX.
       bool isRegMovzx16 = false;
       for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
-        if (MO.isDef() && MO.getParent()->getOpcode() == X86::MOVZX32rr16) {
+        const MachineInstr *MI = MO.getParent();
+        if (MO.isDef() && MI->getOpcode() == X86::MOVZX32rr16) {
           isRegMovzx16 = true;
           break;
         }
@@ -1324,7 +1366,33 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
         if (is_contained(Order, X86::ECX) && !MRI->isReserved(X86::ECX))
           Hints.push_back(X86::ECX);
       }
+
+      // For long-lived values, prefer EDI then EBX (MSVC 6.0 order)
+      bool needsCalleeSaved = false;
+      for (auto &MO : MRI->reg_nodbg_operands(VirtReg)) {
+        const MachineInstr *MI = MO.getParent();
+        if (MI->isCopy() && MO.isDef()) {
+          Register SrcReg = MI->getOperand(1).getReg();
+          if (SrcReg == X86::EAX || SrcReg == X86::EDX) {
+            // This vreg preserves a call result -> needs callee-saved
+            needsCalleeSaved = true;
+            break;
+          }
+        }
+      }
+      if (needsCalleeSaved) {
+        if (is_contained(Order, X86::EDI) && !MRI->isReserved(X86::EDI))
+          Hints.push_back(X86::EDI);
+        if (is_contained(Order, X86::EBX) && !MRI->isReserved(X86::EBX))
+          Hints.push_back(X86::EBX);
+      }
+
+      // Provide COMPLETE allocation order as hints for ALL non-memory-base
+      // vregs, explicitly skipping ESI. This prevents ANY vreg from claiming
+      // ESI via the default allocation order fallback. ESI is reserved
+      // exclusively for memory-base vregs via HardHints above.
       if (!isUsedAsMemBase) {
+        // Full GR32 order minus ESI: EAX,ECX,EDX,EDI,EBX,EBP
         static const MCPhysReg NoEsiOrder[] = {
             X86::EAX, X86::ECX, X86::EDX,
             X86::EDI, X86::EBX, X86::EBP};
@@ -1334,6 +1402,7 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
             Hints.push_back(Reg);
         }
       } else {
+        // Memory-base vregs: ESI already at position 0, add fallbacks
         static const MCPhysReg MemBaseOrder[] = {X86::EDI, X86::EBX};
         for (MCPhysReg Reg : MemBaseOrder) {
           if (is_contained(Order, Reg) && !MRI->isReserved(Reg) &&
@@ -1341,9 +1410,13 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
             Hints.push_back(Reg);
         }
       }
-      return useHardHints;
+
+      // Return HardHints for all vregs in msvc6_regalloc functions.
+      // Memory-base vregs hint ESI; all others exclude ESI.
+      return true;
     }
   }
+
 
   if (ID != X86::TILERegClassID && ID != X86::TILEPAIRRegClassID) {
     if (DisableRegAllocNDDHints || !ST.hasNDD() ||

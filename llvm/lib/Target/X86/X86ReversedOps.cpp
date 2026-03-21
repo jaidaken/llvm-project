@@ -58,6 +58,10 @@ public:
         case X86::XOR16rr: NewOpc = X86::XOR16rr_REV; break;
         default: break;
         }
+        // MOV32rr reversal gated on MOV32rr_REV attribute (not msvc6_regalloc)
+        if (!NewOpc && MI.getOpcode() == X86::MOV32rr &&
+            MF.getFunction().hasFnAttribute(Attribute::MOV32rr_REV))
+          NewOpc = X86::MOV32rr_REV;
         if (NewOpc) {
           MI.setDesc(MF.getSubtarget().getInstrInfo()->get(NewOpc));
           Changed = true;
