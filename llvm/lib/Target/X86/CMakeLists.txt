@@ -56,6 +56,7 @@ set(sources
   X86PreferPopCleanup.cpp
   X86PreferAndMask.cpp
   X86PreferMovImm.cpp
+  X86PreferMovPush.cpp
   X86SwapBufRegister.cpp
   X86PreferTripCountLoop.cpp
   X86PreferEarlyBufAdvance.cpp

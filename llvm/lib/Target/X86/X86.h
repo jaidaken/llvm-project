@@ -180,6 +180,7 @@ FunctionPass *createX86PreferPopCleanupPass();
 /// Return a Machine IR pass that converts MOVZX32rr16 to MOV32rr + AND32ri
 /// 0xFFFF for functions with the prefer_and_mask attribute.
 FunctionPass *createX86PreferAndMaskPass();
+FunctionPass *createX86PreferMovPushPass();
 
 /// Return a Machine IR pass that converts XOR32rr + INC32r to MOV32ri 1
 /// for functions with the prefer_mov_imm attribute.
