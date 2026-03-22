@@ -124,6 +124,7 @@ FunctionPass *createX86ExpandPseudoPass();
 /// Return a Machine IR pass that expands MOVZX32rm8/MOVZX32rm16 into
 /// XOR32rr_REV + MOV8rm/MOV16rm for functions with the expand_movzx attribute.
 FunctionPass *createX86ExpandMovzxPass();
+FunctionPass *createX86FixupMovzxOverlapPass();
 
 /// Return a Machine IR pass that converts reg-reg arithmetic ops to their
 /// reversed encoding variants (e.g., ADD32rr -> ADD32rr_REV) for MSVC 6.0.

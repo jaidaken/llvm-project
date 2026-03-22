@@ -41,6 +41,7 @@ set(sources
   X86PreTileConfig.cpp
   X86ExpandPseudo.cpp
   X86ExpandMovzx.cpp
+  X86FixupMovzxOverlap.cpp
   X86ReversedOps.cpp
   X86PreferAddMem.cpp
   X86PreferFcompFnstsw.cpp
