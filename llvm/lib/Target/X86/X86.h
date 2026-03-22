@@ -183,6 +183,7 @@ FunctionPass *createX86PreferAndMaskPass();
 FunctionPass *createX86PreferMovPushPass();
 FunctionPass *createX86PreferThiscallReorderPass();
 FunctionPass *createX86PreferBatchPushPass();
+FunctionPass *createX86PreferVtableEdxPass();
 FunctionPass *createX86PreferBranchBoolPass();
 FunctionPass *createX86PreferMovAndCmpPass();
 FunctionPass *createX86MergeReturnZeroPass();
