@@ -5109,6 +5109,13 @@ def NoTailCall: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def PreferNegSbb8Bit: InheritableAttr {
+  let Spellings = [GNU<"prefer_neg_sbb_8bit">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def Msvc6Sdtor: InheritableAttr {
   let Spellings = [GNU<"msvc6_sdtor">];
   let Args = [StringArgument<"Params">];

@@ -2431,6 +2431,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("prefer_div");
     if (TargetDecl->hasAttr<NoTailCallAttr>())
       FuncAttrs.addAttribute("no_tail_call");
+    if (TargetDecl->hasAttr<PreferNegSbb8BitAttr>())
+      FuncAttrs.addAttribute("prefer_neg_sbb_8bit");
     if (const auto *FCS = TargetDecl->getAttr<ForcedCalleeSavesAttr>())
       FuncAttrs.addAttribute("forced_callee_saves", FCS->getRegisters());
     if (const auto *TB = TargetDecl->getAttr<TrailingBytesAttr>())

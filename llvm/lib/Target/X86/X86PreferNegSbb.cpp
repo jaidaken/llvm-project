@@ -160,10 +160,20 @@ bool X86PreferNegSbbPass::runOnMachineFunction(MachineFunction &MF) {
 
       DebugLoc DL = XorMI.getDebugLoc();
 
+      // Check if 8-bit SUB+NEG should be used (sub al, N; neg al).
+      // Gated on a separate attribute to avoid false positives.
+      bool Use8Bit = CmpImm > 0 && SrcReg == X86::EAX &&
+                     MF.getFunction().hasFnAttribute("prefer_neg_sbb_8bit");
+
       // When comparing against a non-zero immediate, emit DEC/SUB first
       // to shift the comparison to zero.
       if (CmpImm > 0) {
-        if (CmpImm == 1) {
+        if (Use8Bit) {
+          // 8-bit: sub al, imm (2 bytes: 2C imm)
+          BuildMI(MBB, XorMI, DL, TII->get(X86::SUB8ri), X86::AL)
+              .addReg(X86::AL)
+              .addImm(CmpImm);
+        } else if (CmpImm == 1) {
           // DEC32r is 1 byte (48+r), SUB32ri8 is 3 bytes
           BuildMI(MBB, XorMI, DL, TII->get(X86::DEC32r), SrcReg)
               .addReg(SrcReg);
@@ -174,9 +184,14 @@ bool X86PreferNegSbbPass::runOnMachineFunction(MachineFunction &MF) {
         }
       }
 
-      // Build: NEG32r Src (sets CF=1 if Src!=0, CF=0 if Src==0)
-      BuildMI(MBB, XorMI, DL, TII->get(X86::NEG32r), SrcReg)
-          .addReg(SrcReg);
+      // Build: NEG (8-bit or 32-bit)
+      if (Use8Bit) {
+        BuildMI(MBB, XorMI, DL, TII->get(X86::NEG8r), X86::AL)
+            .addReg(X86::AL);
+      } else {
+        BuildMI(MBB, XorMI, DL, TII->get(X86::NEG32r), SrcReg)
+            .addReg(SrcReg);
+      }
 
       // SBB32rr_REV FinalDst, FinalDst: CF=1 -> -1, CF=0 -> 0
       // Use _REV encoding (0x1b) to match MSVC 6.0 output.
