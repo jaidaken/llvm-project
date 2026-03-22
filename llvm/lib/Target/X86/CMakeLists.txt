@@ -45,6 +45,7 @@ set(sources
   X86PreferAddMem.cpp
   X86PreferFcompFnstsw.cpp
   X86PreferIntegerFloatMove.cpp
+  X86PreferIntFloatForward.cpp
   X86PreferXOR8.cpp
   X86PreferIncDecByte.cpp
   X86SuppressFPImm.cpp

@@ -140,6 +140,7 @@ FunctionPass *createX86PreferFcompFnstswPass();
 /// Return a Machine IR pass that rewrites fld+fstp pairs to integer
 /// mov+mov for float parameters (MSVC 6.0 treats floats as raw 32-bit).
 FunctionPass *createX86PreferIntegerFloatMovePass();
+FunctionPass *createX86PreferIntFloatForwardPass();
 
 /// Return a Machine IR pass that converts XOR32rr/XOR32rr_REV self-xor
 /// zeroing idioms to XOR8rr/XOR8rr_REV for functions with prefer_xor8.
