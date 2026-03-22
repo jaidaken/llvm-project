@@ -119,6 +119,85 @@ bool X86PreferThiscallReorderPass::runOnMachineFunction(MachineFunction &MF) {
       Changed = true;
       I = std::next(MachineBasicBlock::iterator(*NewLoad));
       continue;
+
+      // Pattern B: MOV32rr EAX, ECX; MOV32rm ECX, [ESP+N]; ADD32ri/ADD32ri8 EAX, imm; PUSH32r EAX
+      // Rewrite to: ADD32ri/ADD32ri8 ECX, imm; PUSH32r ECX; MOV32rm ECX, [ESP+N+4]
+      // This handles address computation (this + offset) for thiscall argument setup.
+    PatternB:
+      ;
+    }
+
+    // Second pass: Pattern B (needs 4 instructions)
+    I = MBB.begin();
+    while (I != MBB.end()) {
+      auto N1 = std::next(I);
+      if (N1 == MBB.end()) break;
+      auto N2 = std::next(N1);
+      if (N2 == MBB.end()) break;
+      auto N3 = std::next(N2);
+      if (N3 == MBB.end()) break;
+
+      MachineInstr &MI0 = *I;   // mov eax, ecx
+      MachineInstr &MI1 = *N1;  // mov ecx, [esp+N]
+      MachineInstr &MI2 = *N2;  // add eax, imm
+      MachineInstr &MI3 = *N3;  // push eax
+
+      // Check: MOV32rr EAX, ECX
+      bool isMov0 = (MI0.getOpcode() == X86::MOV32rr ||
+                      MI0.getOpcode() == X86::MOV32rr_REV) &&
+                     MI0.getOperand(0).getReg() == X86::EAX &&
+                     MI0.getOperand(1).getReg() == X86::ECX;
+      if (!isMov0) { ++I; continue; }
+
+      // Check: MOV32rm ECX, [ESP+N]
+      bool isLoad1 = MI1.getOpcode() == X86::MOV32rm &&
+                      MI1.getOperand(0).getReg() == X86::ECX &&
+                      MI1.getOperand(1).isReg() &&
+                      MI1.getOperand(1).getReg() == X86::ESP;
+      if (!isLoad1) { ++I; continue; }
+
+      // Check: ADD32ri or ADD32ri8 EAX, imm
+      bool isAdd2 = (MI2.getOpcode() == X86::ADD32ri ||
+                      MI2.getOpcode() == X86::ADD32ri8) &&
+                     MI2.getOperand(0).getReg() == X86::EAX;
+      if (!isAdd2) { ++I; continue; }
+      int64_t AddImm = MI2.getOperand(2).getImm();
+
+      // Check: PUSH32r EAX
+      bool isPush3 = MI3.getOpcode() == X86::PUSH32r &&
+                      MI3.getOperand(0).getReg() == X86::EAX;
+      if (!isPush3) { ++I; continue; }
+
+      // Matched! Rewrite:
+      // add ecx, imm; push ecx; mov ecx, [esp+N+4]
+      DebugLoc DL = MI0.getDebugLoc();
+      int64_t EspDisp = MI1.getOperand(4).getImm();
+
+      // Build: ADD ECX, imm (same opcode, change reg to ECX)
+      BuildMI(MBB, MI0, DL, TII->get(MI2.getOpcode()), X86::ECX)
+          .addReg(X86::ECX)
+          .addImm(AddImm);
+
+      // Build: PUSH32r ECX
+      BuildMI(MBB, MI0, DL, TII->get(X86::PUSH32r))
+          .addReg(X86::ECX);
+
+      // Build: MOV32rm ECX, [ESP + N + 4] (push shifted ESP)
+      BuildMI(MBB, MI0, DL, TII->get(X86::MOV32rm), X86::ECX)
+          .addReg(X86::ESP)
+          .addImm(MI1.getOperand(2).getImm())
+          .addReg(MI1.getOperand(3).getReg())
+          .addImm(EspDisp + 4)
+          .addReg(MI1.getOperand(5).getReg());
+
+      // Remove original 4 instructions
+      MI0.eraseFromParent();
+      MI1.eraseFromParent();
+      MI2.eraseFromParent();
+      MI3.eraseFromParent();
+
+      Changed = true;
+      continue;
     }
   }
 
