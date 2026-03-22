@@ -196,6 +196,7 @@ FunctionPass *createX86PreferMovImmPass();
 /// Return a Machine IR pass that swaps EBX<->ESI when the primary memory
 /// base is in EBX but MSVC 6.0 expects it in ESI.
 FunctionPass *createX86SwapBufRegisterPass();
+FunctionPass *createX86SwapCmpRegistersPass();
 
 /// Return a Machine IR pass that rewrites add/cmp/ja loop latches to
 /// dec ebp/jne with trip count precomputation.

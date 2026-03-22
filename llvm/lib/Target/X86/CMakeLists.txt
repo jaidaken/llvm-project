@@ -65,6 +65,7 @@ set(sources
   X86PreferMovAndCmp.cpp
   X86MergeReturnZero.cpp
   X86SwapBufRegister.cpp
+  X86SwapCmpRegisters.cpp
   X86PreferTripCountLoop.cpp
   X86PreferEarlyBufAdvance.cpp
   X86InterleaveS2Update.cpp
