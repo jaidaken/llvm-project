@@ -190,13 +190,15 @@ bool X86PreferThiscallReorderPass::runOnMachineFunction(MachineFunction &MF) {
           .addImm(EspDisp + 4)
           .addReg(MI1.getOperand(5).getReg());
 
-      // Remove original 4 instructions
+      // Remove original 4 instructions. Save next iterator first.
+      auto NextAfter = std::next(N3);
       MI0.eraseFromParent();
       MI1.eraseFromParent();
       MI2.eraseFromParent();
       MI3.eraseFromParent();
 
       Changed = true;
+      I = NextAfter;
       continue;
     }
   }
