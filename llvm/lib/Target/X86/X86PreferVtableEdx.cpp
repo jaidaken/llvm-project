@@ -78,72 +78,117 @@ bool X86PreferVtableEdxPass::runOnMachineFunction(MachineFunction &MF) {
       if (CallBase == X86::NoRegister || CallBase == X86::ESP)
         continue;
 
-      // Step 2: Walk backward to find PUSH32r using CallBase.
-      // Skip CFI and debug pseudo-instructions.
-      auto PushIt = I;
-      do {
-        if (PushIt == MBB.begin()) break;
-        --PushIt;
-      } while (PushIt->isPseudo() && PushIt != MBB.begin());
-      if (PushIt->isPseudo()) continue;
-      MachineInstr &PushMI = *PushIt;
-      if (PushMI.getOpcode() != X86::PUSH32r ||
-          PushMI.getOperand(0).getReg() != CallBase)
+      // Collect preceding non-pseudo instructions (up to 6).
+      SmallVector<MachineInstr*, 6> Prev;
+      {
+        auto WalkIt = MachineBasicBlock::iterator(CallMI);
+        while (Prev.size() < 6 && WalkIt != MBB.begin()) {
+          --WalkIt;
+          if (!WalkIt->isPseudo())
+            Prev.push_back(&*WalkIt);
+        }
+      }
+      // Prev[0] = instruction right before CALL, Prev[1] = one before that, etc.
+
+      // === 2-PARAM PATTERN ===
+      // Prev[0]: PUSH32r RegB (param_1, e.g. EDX)
+      // Prev[1]: PUSH32r CallBase (param_2, e.g. EAX)
+      // Prev[2]: MOV32rm RegB, [ESP+N1] (param_1 load)
+      // Prev[3]: MOV32rm CallBase, [ESP+N2] (param_2 load, clobbers vtable!)
+      // Prev[4]: MOV32rm CallBase, [non-ESP] (vtable load)
+      if (Prev.size() >= 5 &&
+          Prev[0]->getOpcode() == X86::PUSH32r &&
+          Prev[1]->getOpcode() == X86::PUSH32r &&
+          Prev[1]->getOperand(0).getReg() == CallBase &&
+          Prev[2]->getOpcode() == X86::MOV32rm &&
+          Prev[2]->getOperand(1).isReg() &&
+          Prev[2]->getOperand(1).getReg() == X86::ESP &&
+          Prev[3]->getOpcode() == X86::MOV32rm &&
+          Prev[3]->getOperand(0).getReg() == CallBase &&
+          Prev[3]->getOperand(1).isReg() &&
+          Prev[3]->getOperand(1).getReg() == X86::ESP &&
+          Prev[4]->getOpcode() == X86::MOV32rm &&
+          Prev[4]->getOperand(0).getReg() == CallBase &&
+          Prev[4]->getOperand(1).isReg() &&
+          Prev[4]->getOperand(1).getReg() != X86::ESP) {
+
+        DebugLoc DL = Prev[3]->getDebugLoc();
+        int64_t Param2Disp = Prev[3]->getOperand(4).getImm();
+        int64_t Param1Disp = Prev[2]->getOperand(4).getImm();
+        MachineInstr &VtableMI = *Prev[4];
+
+        // Build: MOV32rm EDX, [ESP+Param2Disp] before vtable
+        BuildMI(MBB, VtableMI, DL, TII->get(X86::MOV32rm), X86::EDX)
+            .addReg(X86::ESP)
+            .addImm(1).addReg(X86::NoRegister)
+            .addImm(Param2Disp)
+            .addReg(X86::NoRegister);
+
+        // VtableMI stays (now after new param2 load)
+        // Change push of param_2 from CallBase to EDX
+        Prev[1]->getOperand(0).setReg(X86::EDX);
+
+        // Build: MOV32rm EDX, [ESP+Param1Disp+4] between the two pushes
+        // +4 because first push shifted ESP
+        auto AfterPush2 = std::next(MachineBasicBlock::iterator(*Prev[1]));
+        BuildMI(MBB, *AfterPush2, DL, TII->get(X86::MOV32rm), X86::EDX)
+            .addReg(X86::ESP)
+            .addImm(1).addReg(X86::NoRegister)
+            .addImm(Param1Disp + 4)
+            .addReg(X86::NoRegister);
+
+        // Change push of param_1 to EDX
+        Prev[0]->getOperand(0).setReg(X86::EDX);
+
+        // Remove old param loads
+        Prev[3]->eraseFromParent();
+        Prev[2]->eraseFromParent();
+
+        Changed = true;
         continue;
+      }
 
-      // Step 3: Walk backward to find MOV32rm writing CallBase from ESP
-      // (the parameter load).
-      if (PushIt == MBB.begin())
-        continue;
-      auto ParamIt = std::prev(PushIt);
-      MachineInstr &ParamMI = *ParamIt;
-      if (ParamMI.getOpcode() != X86::MOV32rm ||
-          ParamMI.getOperand(0).getReg() != CallBase)
-        continue;
-      // Check source is ESP-based.
-      if (!ParamMI.getOperand(1).isReg() ||
-          ParamMI.getOperand(1).getReg() != X86::ESP)
-        continue;
+      // === 1-PARAM PATTERN ===
+      // Prev[0]: PUSH32r CallBase
+      // Prev[1]: MOV32rm CallBase, [ESP+N] (param load, clobbers vtable!)
+      // Prev[2]: MOV32rm CallBase, [non-ESP] (vtable load)
+      if (Prev.size() >= 3 &&
+          Prev[0]->getOpcode() == X86::PUSH32r &&
+          Prev[0]->getOperand(0).getReg() == CallBase &&
+          Prev[1]->getOpcode() == X86::MOV32rm &&
+          Prev[1]->getOperand(0).getReg() == CallBase &&
+          Prev[1]->getOperand(1).isReg() &&
+          Prev[1]->getOperand(1).getReg() == X86::ESP &&
+          Prev[2]->getOpcode() == X86::MOV32rm &&
+          Prev[2]->getOperand(0).getReg() == CallBase &&
+          Prev[2]->getOperand(1).isReg() &&
+          Prev[2]->getOperand(1).getReg() != X86::ESP) {
 
-      // Step 4: Walk backward to find MOV32rm writing CallBase from non-ESP
-      // (the vtable load).
-      if (ParamIt == MBB.begin())
-        continue;
-      auto VtableIt = std::prev(ParamIt);
-      MachineInstr &VtableMI = *VtableIt;
-      if (VtableMI.getOpcode() != X86::MOV32rm ||
-          VtableMI.getOperand(0).getReg() != CallBase)
-        continue;
-      // Vtable load must NOT be from ESP.
-      if (VtableMI.getOperand(1).isReg() &&
-          VtableMI.getOperand(1).getReg() == X86::ESP)
-        continue;
+        // 1-param fix: change param load to EDX, reorder before vtable.
+        MachineInstr &PushMI = *Prev[0];
+        MachineInstr &ParamMI = *Prev[1];
+        MachineInstr &VtableMI = *Prev[2];
 
-      // Confirmed: both loads write to CallBase (the conflict).
-      // Fix: change param load dest to EDX, change push to EDX,
-      // and reorder so param load comes before vtable load.
+        DebugLoc DL = ParamMI.getDebugLoc();
 
+        // Build new param load: MOV32rm EDX, [ESP+offset]
+        int64_t ParamDisp = ParamMI.getOperand(4).getImm();
+        BuildMI(MBB, VtableMI, DL, TII->get(X86::MOV32rm), X86::EDX)
+            .addReg(X86::ESP)
+            .addImm(ParamMI.getOperand(2).getImm())  // scale
+            .addReg(ParamMI.getOperand(3).getReg())   // index
+            .addImm(ParamDisp)                         // disp
+            .addReg(ParamMI.getOperand(5).getReg());   // segment
 
-      DebugLoc DL = ParamMI.getDebugLoc();
+        // VtableMI stays in place (now after new param load).
+        // Change push to use EDX.
+        PushMI.getOperand(0).setReg(X86::EDX);
 
-      // Build new param load: MOV32rm EDX, [ESP+offset]
-      int64_t ParamDisp = ParamMI.getOperand(4).getImm();
-      MachineInstr *NewParam = BuildMI(MBB, VtableMI, DL,
-          TII->get(X86::MOV32rm), X86::EDX)
-          .addReg(X86::ESP)
-          .addImm(ParamMI.getOperand(2).getImm())  // scale
-          .addReg(ParamMI.getOperand(3).getReg())   // index
-          .addImm(ParamDisp)                         // disp
-          .addReg(ParamMI.getOperand(5).getReg());   // segment
+        // Remove old param load.
+        ParamMI.eraseFromParent();
 
-      // VtableMI stays in place (now after NewParam).
-      // Change push to use EDX.
-      PushMI.getOperand(0).setReg(X86::EDX);
-
-      // Remove old param load.
-      ParamMI.eraseFromParent();
-
-      Changed = true;
+        Changed = true;
+      }
     }
   }
 
