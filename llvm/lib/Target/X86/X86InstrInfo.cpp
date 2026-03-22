@@ -7437,6 +7437,22 @@ MachineInstr *X86InstrInfo::foldMemoryOperandImpl(
        Opc == X86::PUSH32r || Opc == X86::PUSH64r))
     return nullptr;
 
+  // bw1-decomp: Prevent load folding into CMP instructions for MSVC 6.0
+  // matching. MSVC 6.0 uses separate load + register-form CMP, never
+  // memory-form CMP for field comparisons. The ISel-time block in
+  // IsProfitableToFold prevents CMP32mi pattern matching, but the
+  // register allocator re-folds via the fold tables. Block it here.
+  if (MF.getFunction().hasFnAttribute(Attribute::Msvc6RegAlloc)) {
+    switch (Opc) {
+    case X86::CMP8ri:  case X86::CMP16ri:  case X86::CMP32ri:
+    case X86::CMP8ri8: case X86::CMP16ri8: case X86::CMP32ri8:
+    case X86::CMP8rr:  case X86::CMP16rr:  case X86::CMP32rr:
+      return nullptr;
+    default:
+      break;
+    }
+  }
+
   // Avoid partial and undef register update stalls unless optimizing for size.
   if (!MF.getFunction().hasOptSize() &&
       (hasPartialRegUpdate(Opc, Subtarget, /*ForLoadFold*/ true) ||
