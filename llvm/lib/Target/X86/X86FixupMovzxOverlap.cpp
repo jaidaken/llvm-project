@@ -85,8 +85,32 @@ static void replaceRegWithSubs(MachineInstr &MI, Register OldReg32,
   }
 }
 
+/// Check if a MOV32rm has dest overlapping with base register.
+static bool hasMemOverlap(MachineInstr &MI, const TargetRegisterInfo *TRI) {
+  Register DstReg = MI.getOperand(0).getReg();
+  for (unsigned i = 1; i < MI.getNumOperands(); ++i) {
+    const MachineOperand &MO = MI.getOperand(i);
+    if (MO.isReg() && MO.getReg() != X86::NoRegister &&
+        TRI->regsOverlap(DstReg, MO.getReg()))
+      return true;
+  }
+  return false;
+}
+
+/// Check if a register is used in the memory operands of an instruction.
+static bool regInMemOps(MachineInstr &MI, Register Reg,
+                        const TargetRegisterInfo *TRI) {
+  for (unsigned i = 1; i < MI.getNumOperands(); ++i) {
+    const MachineOperand &MO = MI.getOperand(i);
+    if (MO.isReg() && TRI->regsOverlap(MO.getReg(), Reg))
+      return true;
+  }
+  return false;
+}
+
 bool X86FixupMovzxOverlapPass::runOnMachineFunction(MachineFunction &MF) {
-  if (!MF.getFunction().hasFnAttribute(Attribute::ExpandMovzx))
+  if (!MF.getFunction().hasFnAttribute(Attribute::ExpandMovzx) &&
+      !MF.getFunction().hasFnAttribute(Attribute::NoCalleeSaves))
     return false;
 
   const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();
@@ -95,82 +119,82 @@ bool X86FixupMovzxOverlapPass::runOnMachineFunction(MachineFunction &MF) {
 
   for (MachineBasicBlock &MBB : MF) {
     for (auto I = MBB.begin(), E = MBB.end(); I != E; ++I) {
-      MachineInstr &MovzxMI = *I;
+      MachineInstr &LoadMI = *I;
+      unsigned Opc = LoadMI.getOpcode();
 
-      // Only handle MOVZX32rm8 and MOVZX32rm16 (memory forms).
-      if (MovzxMI.getOpcode() != X86::MOVZX32rm8 &&
-          MovzxMI.getOpcode() != X86::MOVZX32rm16)
-        continue;
-
-      Register DstReg = MovzxMI.getOperand(0).getReg();
-
-      // Check if dest overlaps with any memory operand register.
-      bool HasOverlap = false;
-      for (unsigned i = 1; i < MovzxMI.getNumOperands(); ++i) {
-        const MachineOperand &MO = MovzxMI.getOperand(i);
-        if (MO.isReg() && MO.getReg() != X86::NoRegister &&
-            TRI->regsOverlap(DstReg, MO.getReg())) {
-          HasOverlap = true;
-          break;
-        }
-      }
-      if (!HasOverlap)
-        continue;
-
-      // Can't fix if dest is already EAX (nothing to swap to).
-      if (DstReg == X86::EAX)
-        continue;
-
-      // Verify EAX is not used in the memory operand.
-      bool EAXInMemOp = false;
-      for (unsigned i = 1; i < MovzxMI.getNumOperands(); ++i) {
-        const MachineOperand &MO = MovzxMI.getOperand(i);
-        if (MO.isReg() && TRI->regsOverlap(MO.getReg(), X86::EAX)) {
-          EAXInMemOp = true;
-          break;
-        }
-      }
-      if (EAXInMemOp)
-        continue;
-
-      // Change MOVZX destination from DstReg to EAX.
-      Register OldReg = DstReg;
-      MovzxMI.getOperand(0).setReg(X86::EAX);
-
-      // Walk forward through remaining instructions, rewriting OldReg->EAX.
-      SmallVector<MachineInstr*, 4> ToErase;
-      auto NextI = std::next(I);
-      for (auto J = NextI; J != E; ++J) {
-        MachineInstr &MI = *J;
-        if (MI.isPseudo())
+      // === Pattern 1: MOVZX32rm8/16 with dest==base overlap ===
+      // Fix: change dest to EAX (for expand_movzx to work later).
+      // Gate: ExpandMovzx attribute.
+      if ((Opc == X86::MOVZX32rm8 || Opc == X86::MOVZX32rm16) &&
+          MF.getFunction().hasFnAttribute(Attribute::ExpandMovzx)) {
+        Register DstReg = LoadMI.getOperand(0).getReg();
+        if (!hasMemOverlap(LoadMI, TRI) || DstReg == X86::EAX ||
+            regInMemOps(LoadMI, X86::EAX, TRI))
           continue;
 
-        // Check for XOR EAX,EAX (dead zero from original sete path).
-        // Delete it - ExpandMovzx will insert its own XOR.
-        unsigned Opc = MI.getOpcode();
-        if ((Opc == X86::XOR32rr || Opc == X86::XOR32rr_REV) &&
-            MI.getOperand(0).getReg() == X86::EAX &&
-            MI.getOperand(1).getReg() == X86::EAX &&
-            MI.getOperand(2).getReg() == X86::EAX) {
-          ToErase.push_back(&MI);
-          continue;
-        }
+        // Change MOVZX destination from DstReg to EAX.
+        Register OldReg = DstReg;
+        LoadMI.getOperand(0).setReg(X86::EAX);
 
-        // Rewrite OldReg (and sub-regs) to EAX (and sub-regs).
-        replaceRegWithSubs(MI, OldReg, X86::EAX);
-
-        // Check for self-move MOV32rr EAX, EAX (was MOV EAX, OldReg).
-        if ((Opc == X86::MOV32rr || Opc == X86::MOV32rr_REV) &&
-            MI.getOperand(0).getReg() == X86::EAX &&
-            MI.getOperand(1).getReg() == X86::EAX) {
-          ToErase.push_back(&MI);
+        // Walk forward, rewriting OldReg->EAX. Delete dead XOR/self-MOV.
+        SmallVector<MachineInstr*, 4> ToErase;
+        for (auto J = std::next(I); J != E; ++J) {
+          if (J->isPseudo()) continue;
+          unsigned JOpc = J->getOpcode();
+          // Delete XOR EAX,EAX (ExpandMovzx will insert its own).
+          if ((JOpc == X86::XOR32rr || JOpc == X86::XOR32rr_REV) &&
+              J->getOperand(0).getReg() == X86::EAX &&
+              J->getOperand(1).getReg() == X86::EAX &&
+              J->getOperand(2).getReg() == X86::EAX) {
+            ToErase.push_back(&*J);
+            continue;
+          }
+          replaceRegWithSubs(*J, OldReg, X86::EAX);
+          // Delete self-move MOV EAX, EAX.
+          if ((JOpc == X86::MOV32rr || JOpc == X86::MOV32rr_REV) &&
+              J->getOperand(0).getReg() == X86::EAX &&
+              J->getOperand(1).getReg() == X86::EAX)
+            ToErase.push_back(&*J);
         }
+        for (MachineInstr *MI : ToErase) MI->eraseFromParent();
+        Changed = true;
+        continue;
       }
 
-      for (MachineInstr *MI : ToErase)
-        MI->eraseFromParent();
+      // === Pattern 2: MOV32rm with dest==base overlap ===
+      // Fix: change dest to EDX (EAX is used for zero/result).
+      // Used for: mov ecx,[ecx+N]; xor eax; test ecx; setne al
+      // Target:   mov edx,[ecx+N]; xor eax; test edx; setne al
+      // Gate: NoCalleeSaves attribute (these are simple accessor functions).
+      if (Opc == X86::MOV32rm &&
+          MF.getFunction().hasFnAttribute(Attribute::NoCalleeSaves)) {
+        Register DstReg = LoadMI.getOperand(0).getReg();
+        if (!hasMemOverlap(LoadMI, TRI) || DstReg == X86::EDX ||
+            regInMemOps(LoadMI, X86::EDX, TRI))
+          continue;
 
-      Changed = true;
+        // Verify this is followed by XOR+TEST+SETCCr pattern
+        // (don't change registers for arbitrary MOV32rm overlaps).
+        auto NextIt = std::next(I);
+        while (NextIt != E && NextIt->isPseudo()) ++NextIt;
+        if (NextIt == E) continue;
+        unsigned NextOpc = NextIt->getOpcode();
+        bool IsXorEax = (NextOpc == X86::XOR32rr || NextOpc == X86::XOR32rr_REV) &&
+                         NextIt->getOperand(0).getReg() == X86::EAX;
+        if (!IsXorEax) continue;
+
+        // Change MOV32rm destination from DstReg to EDX.
+        Register OldReg = DstReg;
+        LoadMI.getOperand(0).setReg(X86::EDX);
+
+        // Walk forward, rewriting OldReg->EDX (but NOT EAX references).
+        for (auto J = std::next(I); J != E; ++J) {
+          if (J->isPseudo()) continue;
+          replaceRegWithSubs(*J, OldReg, X86::EDX);
+        }
+        Changed = true;
+        continue;
+      }
     }
   }
 
