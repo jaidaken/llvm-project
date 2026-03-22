@@ -66,8 +66,11 @@ bool X86PreferPopCleanupPass::runOnMachineFunction(MachineFunction &MF) {
       for (auto I = MBB.rbegin(), E = MBB.rend(); I != E; ++I) {
         MachineInstr &MI = *I;
 
-        // Match: ADD32ri8 ESP, 4
-        if (MI.getOpcode() == X86::ADD32ri8 &&
+        // Match: ADD32ri8 ESP, 4  OR  ADD32ri ESP, 4
+        // Frame lowering emits ADD32ri; encoding optimization to ADD32ri8
+        // runs after this pass, so we must match both forms.
+        if ((MI.getOpcode() == X86::ADD32ri8 ||
+             MI.getOpcode() == X86::ADD32ri) &&
             MI.getOperand(0).getReg() == X86::ESP &&
             MI.getOperand(2).getImm() == 4) {
           // ECX must be dead — pop will clobber it.

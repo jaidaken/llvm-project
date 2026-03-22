@@ -17,6 +17,13 @@
 //   neg eax; sbb eax,eax; neg eax
 //   val==0: CF=0, sbb→0, neg→0. val!=0: CF=1, sbb→-1, neg→1.
 //
+// COND_E (== Imm): xor+cmp+sete  -> dec/sub+neg+sbb+inc
+//   dec eax; neg eax; sbb eax,eax; inc eax   (when Imm==1)
+//   sub eax,N; neg eax; sbb eax,eax; inc eax (when Imm>1)
+//
+// COND_NE (!= Imm): xor+cmp+setne -> dec/sub+neg+sbb+neg
+//   dec eax; neg eax; sbb eax,eax; neg eax   (when Imm==1)
+//
 //===----------------------------------------------------------------------===//
 
 #include "X86.h"
@@ -88,20 +95,36 @@ bool X86PreferNegSbbPass::runOnMachineFunction(MachineFunction &MF) {
         continue;
       }
 
-      // Step 2: Find TEST32rr Src, Src immediately after.
+      // Step 2: Find TEST32rr Src, Src or CMP32ri8/CMP32ri Src, Imm.
       auto TestI = std::next(I);
-      if (TestI == E || TestI->getOpcode() != X86::TEST32rr) {
+      if (TestI == E) {
         ++I;
         continue;
       }
 
-      Register TestSrc1 = TestI->getOperand(0).getReg();
-      Register TestSrc2 = TestI->getOperand(1).getReg();
-      if (TestSrc1 != TestSrc2) {
+      Register SrcReg;
+      int64_t CmpImm = 0; // 0 = TEST (compare against zero)
+
+      if (TestI->getOpcode() == X86::TEST32rr) {
+        Register TestSrc1 = TestI->getOperand(0).getReg();
+        Register TestSrc2 = TestI->getOperand(1).getReg();
+        if (TestSrc1 != TestSrc2) {
+          ++I;
+          continue;
+        }
+        SrcReg = TestSrc1;
+      } else if (TestI->getOpcode() == X86::CMP32ri8 ||
+                 TestI->getOpcode() == X86::CMP32ri) {
+        SrcReg = TestI->getOperand(0).getReg();
+        CmpImm = TestI->getOperand(1).getImm();
+        if (CmpImm <= 0) {
+          ++I;
+          continue; // Only handle positive immediates
+        }
+      } else {
         ++I;
         continue;
       }
-      Register SrcReg = TestSrc1;
 
       // Step 3: Find SETCCr with COND_E or COND_NE immediately after TEST.
       auto SetccI = std::next(TestI);
@@ -136,6 +159,20 @@ bool X86PreferNegSbbPass::runOnMachineFunction(MachineFunction &MF) {
       }
 
       DebugLoc DL = XorMI.getDebugLoc();
+
+      // When comparing against a non-zero immediate, emit DEC/SUB first
+      // to shift the comparison to zero.
+      if (CmpImm > 0) {
+        if (CmpImm == 1) {
+          // DEC32r is 1 byte (48+r), SUB32ri8 is 3 bytes
+          BuildMI(MBB, XorMI, DL, TII->get(X86::DEC32r), SrcReg)
+              .addReg(SrcReg);
+        } else {
+          BuildMI(MBB, XorMI, DL, TII->get(X86::SUB32ri8), SrcReg)
+              .addReg(SrcReg)
+              .addImm(CmpImm);
+        }
+      }
 
       // Build: NEG32r Src (sets CF=1 if Src!=0, CF=0 if Src==0)
       BuildMI(MBB, XorMI, DL, TII->get(X86::NEG32r), SrcReg)
