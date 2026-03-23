@@ -222,8 +222,8 @@ bool X86ReorderStoresPass::reorderStoresInBlock(
     // Sort stores by the desired position from the attribute.
     SmallVector<MachineInstr *, 16> Sorted(Stores);
     llvm::sort(Sorted, [&](MachineInstr *A, MachineInstr *B) {
-      return DesiredPosition[getStoreDisp(A)] <
-             DesiredPosition[getStoreDisp(B)];
+      return DesiredPosition[getStoreDisp(*A)] <
+             DesiredPosition[getStoreDisp(*B)];
     });
 
     // Check if already in the desired order.
