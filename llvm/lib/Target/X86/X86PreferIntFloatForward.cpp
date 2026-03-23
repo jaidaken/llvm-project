@@ -7,12 +7,12 @@
 //===----------------------------------------------------------------------===//
 //
 // bw1-decomp: When forwarding a float parameter to another function, LLVM
-// uses FPU instructions (sub esp,4; fld [esp+N]; fstp [esp]; call; sub esp,4).
-// MSVC 6.0 treats the float as a raw 4-byte integer (mov eax,[esp+N]; push eax;
+// uses FPU instructions (sub esp,4; fld [src]; fstp [esp]; call; sub esp,4).
+// MSVC 6.0 treats the float as a raw 4-byte integer (mov eax,[src]; push eax;
 // call). This pass detects the FPU forwarding pattern and replaces it with
 // the integer move+push sequence.
 //
-// Pattern:
+// Pattern A (stack-relative, source base = ESP):
 //   SUB32ri/SUB32ri8 ESP, 4     ; ADJCALLSTACKDOWN
 //   LD_F32m [ESP + N]           ; fld dword ptr [esp+N]
 //   ST_FP32m [ESP + 0]          ; fstp dword ptr [esp]
@@ -21,6 +21,19 @@
 //
 // Becomes:
 //   MOV32rm EAX, [ESP + (N-4)]  ; load float as integer (adjust for no sub)
+//   PUSH32r EAX                 ; push (combines sub+store)
+//   CALL ...                    ; call
+//   ; compensation removed (push already grew stack)
+//
+// Pattern B (non-stack, source base != ESP, e.g. struct field):
+//   SUB32ri/SUB32ri8 ESP, 4     ; ADJCALLSTACKDOWN
+//   LD_F32m [reg + N]           ; fld dword ptr [ecx+0x50]
+//   ST_FP32m [ESP + 0]          ; fstp dword ptr [esp]
+//   CALL ...                    ; call
+//   SUB32ri/SUB32ri8 ESP, 4     ; callee-pops compensation
+//
+// Becomes:
+//   MOV32rm EAX, [reg + N]      ; load float as integer (no adjust needed)
 //   PUSH32r EAX                 ; push (combines sub+store)
 //   CALL ...                    ; call
 //   ; compensation removed (push already grew stack)
@@ -84,16 +97,18 @@ bool X86PreferIntFloatForwardPass::runOnMachineFunction(MachineFunction &MF) {
       // Replace with: MOV32rm EAX, [ESP+(N-4)]; PUSH32r EAX; CALL
       // Remove the post-call SUB ESP,4 compensation.
 
-      // Step 1: Find LD_F32m [ESP + N]
+      // Step 1: Find LD_F32m [base + N]
+      // Base can be ESP (stack param forwarding) or any other register
+      // (e.g. struct field forwarding like fld [ecx+0x50]).
       if (FldMI.getOpcode() != X86::LD_F32m) {
         ++I;
         continue;
       }
-      if (!FldMI.getOperand(0).isReg() ||
-          FldMI.getOperand(0).getReg() != X86::ESP) {
+      if (!FldMI.getOperand(0).isReg()) {
         ++I;
         continue;
       }
+      Register FldBase = FldMI.getOperand(0).getReg();
       int64_t FldDisp = FldMI.getOperand(3).getImm();
 
       // Step 2: Find ST_FP32m [ESP + 0] immediately after
@@ -135,15 +150,18 @@ bool X86PreferIntFloatForwardPass::runOnMachineFunction(MachineFunction &MF) {
       // Pattern matched! Build replacement.
       DebugLoc DL = FldMI.getDebugLoc();
 
-      // MOV32rm EAX, [ESP + (FldDisp - 4)]
-      // The -4 adjusts for removing the pre-allocated call arg space.
-      // With push instead of pre-allocated space, ESP is 4 higher at
-      // the point of the load.
+      // MOV32rm EAX, [base + disp]
+      // When base is ESP, subtract 4 from displacement: the pre-allocated
+      // call arg space (sub esp,4) is gone, so ESP is 4 higher at the
+      // load point than it was with the original fld.
+      // When base is any other register, the address is independent of
+      // ESP movement, so use the displacement unchanged.
+      int64_t AdjDisp = (FldBase == X86::ESP) ? FldDisp - 4 : FldDisp;
       BuildMI(MBB, FldMI, DL, TII->get(X86::MOV32rm), X86::EAX)
-          .addReg(X86::ESP)
+          .addReg(FldBase)
           .addImm(FldMI.getOperand(1).getImm())  // scale
           .addReg(FldMI.getOperand(2).getReg())   // index
-          .addImm(FldDisp - 4)                    // adjusted displacement
+          .addImm(AdjDisp)                        // displacement
           .addReg(FldMI.getOperand(4).getReg());  // segment
 
       // PUSH32r EAX
