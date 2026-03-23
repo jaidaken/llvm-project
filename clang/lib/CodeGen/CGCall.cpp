@@ -2423,6 +2423,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::PreferFmulMem);
     if (TargetDecl->hasAttr<PreferPopCleanupAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::PreferPopCleanup);
+    if (TargetDecl->hasAttr<Msvc6PartialReturnAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::Msvc6PartialReturn);
     if (TargetDecl->hasAttr<PreferAndMaskAttr>())
       FuncAttrs.addAttribute("prefer_and_mask");
     if (TargetDecl->hasAttr<PreferMovImmAttr>())
@@ -2431,6 +2433,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("prefer_div");
     if (TargetDecl->hasAttr<NoTailCallAttr>())
       FuncAttrs.addAttribute("no_tail_call");
+    if (TargetDecl->hasAttr<Msvc6ScheduleAttr>())
+      FuncAttrs.addAttribute("msvc6_schedule");
     if (TargetDecl->hasAttr<PreferNegSbb8BitAttr>())
       FuncAttrs.addAttribute("prefer_neg_sbb_8bit");
     if (const auto *FCS = TargetDecl->getAttr<ForcedCalleeSavesAttr>())

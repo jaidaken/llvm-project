@@ -41,6 +41,7 @@ set(sources
   X86PreTileConfig.cpp
   X86ExpandPseudo.cpp
   X86ExpandMovzx.cpp
+  X86Msvc6PartialReturn.cpp
   X86FixupMovzxOverlap.cpp
   X86ReversedOps.cpp
   X86PreferAddMem.cpp
@@ -74,6 +75,7 @@ set(sources
   X86StripNopPadding.cpp
   X86PreferSignedJcc.cpp
   X86Msvc6Restructure.cpp
+  X86Msvc6Schedule.cpp
   X86FastISel.cpp
   X86FixupBWInsts.cpp
   X86FixupLEAs.cpp

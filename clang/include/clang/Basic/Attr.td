@@ -5081,6 +5081,13 @@ def PreferPopCleanup: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def Msvc6PartialReturn: InheritableAttr {
+  let Spellings = [GNU<"msvc6_partial_return">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def PreferAndMask: InheritableAttr {
   let Spellings = [GNU<"prefer_and_mask">];
   let Subjects = SubjectList<[Function]>;
@@ -5111,6 +5118,13 @@ def NoTailCall: InheritableAttr {
 
 def PreferNegSbb8Bit: InheritableAttr {
   let Spellings = [GNU<"prefer_neg_sbb_8bit">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def Msvc6Schedule: InheritableAttr {
+  let Spellings = [GNU<"msvc6_schedule">];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
   let SimpleHandler = 1;

@@ -126,6 +126,10 @@ FunctionPass *createX86ExpandPseudoPass();
 FunctionPass *createX86ExpandMovzxPass();
 FunctionPass *createX86FixupMovzxOverlapPass();
 
+/// Return a Machine IR pass that converts MOVZX+RET to MOV partial reg+RET
+/// and MOV32ri small_imm+RET to MOV8ri+RET (MSVC 6.0 partial return pattern).
+FunctionPass *createX86Msvc6PartialReturnPass();
+
 /// Return a Machine IR pass that converts reg-reg arithmetic ops to their
 /// reversed encoding variants (e.g., ADD32rr -> ADD32rr_REV) for MSVC 6.0.
 FunctionPass *createX86ReversedOpsPass();
@@ -226,6 +230,10 @@ FunctionPass *createX86PreferSignedJccPass();
 /// Return a Machine IR pass that restructures functions to match MSVC 6.0
 /// block layout, split prologue, and interleaved epilogue.
 FunctionPass *createX86Msvc6RestructurePass();
+
+/// Return a Machine IR pass that reorders instructions to match MSVC 6.0's
+/// AST-order depth-first evaluation, adjusting registers simultaneously.
+FunctionPass *createX86Msvc6SchedulePass();
 
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();
