@@ -513,3 +513,6 @@ def PreferFmulMem : EnumAttr<"PreferFmulMem", IntersectPreserve, [FnAttr]>;
 
 /// Use pop ecx instead of add esp, 4 for cdecl stack cleanup.
 def PreferPopCleanup : EnumAttr<"PreferPopCleanup", IntersectPreserve, [FnAttr]>;
+
+/// Use partial register (AL/AX) for byte/word returns and small constants.
+def Msvc6PartialReturn : EnumAttr<"Msvc6PartialReturn", IntersectPreserve, [FnAttr]>;

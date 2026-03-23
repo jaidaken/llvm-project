@@ -5144,6 +5144,13 @@ def UnfoldCmpMem: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def PreferMovTest: InheritableAttr {
+  let Spellings = [GNU<"prefer_mov_test">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def Msvc6Schedule: InheritableAttr {
   let Spellings = [GNU<"msvc6_schedule">];
   let Subjects = SubjectList<[Function]>;

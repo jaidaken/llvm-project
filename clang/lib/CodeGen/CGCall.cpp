@@ -2441,6 +2441,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("suppress_movzx_zero");
     if (TargetDecl->hasAttr<UnfoldCmpMemAttr>())
       FuncAttrs.addAttribute("unfold_cmp_mem");
+    if (TargetDecl->hasAttr<PreferMovTestAttr>())
+      FuncAttrs.addAttribute("prefer_mov_test");
     if (TargetDecl->hasAttr<PreferNegSbb8BitAttr>())
       FuncAttrs.addAttribute("prefer_neg_sbb_8bit");
     if (const auto *FCS = TargetDecl->getAttr<ForcedCalleeSavesAttr>())
