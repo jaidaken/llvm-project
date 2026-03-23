@@ -674,12 +674,17 @@ X86DAGToDAGISel::IsProfitableToFold(SDValue N, SDNode *U, SDNode *Root) const {
   // This prevents test reg,reg -> cmp [mem],0 and similar transformations.
   // EXCEPTION: Allow load folding when the Root is a call-like node,
   // because blocking it causes ISel to produce $noreg for indirect calls.
+  // EXCEPTION: Allow load folding into CMP when allow_cmp_fold is set,
+  // for functions where MSVC 6.0 generates cmp [mem], imm directly.
   if (N.getOpcode() == ISD::LOAD) {
     if (Root) {
       unsigned RootOpc = Root->getOpcode();
       if (RootOpc == X86ISD::CALL || RootOpc == X86ISD::TC_RETURN ||
           RootOpc == X86ISD::TLSCALL || RootOpc == X86ISD::NT_CALL)
         return true; // allow fold into call targets
+      if (RootOpc == X86ISD::CMP &&
+          MF->getFunction().hasFnAttribute("allow_cmp_fold"))
+        return true; // allow fold into CMP for MSVC 6.0 pattern
     }
     return false;
   }

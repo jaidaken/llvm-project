@@ -235,6 +235,14 @@ FunctionPass *createX86Msvc6RestructurePass();
 /// AST-order depth-first evaluation, adjusting registers simultaneously.
 FunctionPass *createX86Msvc6SchedulePass();
 
+/// Return a Machine IR pass that removes the XOR zeroing before bare
+/// subreg loads when the upper bits are dead (MSVC 6.0 pattern).
+FunctionPass *createX86SuppressMovzxPass();
+
+/// Return a Machine IR pass that unfolds CMP [mem],imm into
+/// MOV reg,[mem] + CMP reg,imm for MSVC 6.0 bool accessor patterns.
+FunctionPass *createX86UnfoldCmpMemPass();
+
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();
 

@@ -2435,6 +2435,12 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("no_tail_call");
     if (TargetDecl->hasAttr<Msvc6ScheduleAttr>())
       FuncAttrs.addAttribute("msvc6_schedule");
+    if (TargetDecl->hasAttr<AllowCmpFoldAttr>())
+      FuncAttrs.addAttribute("allow_cmp_fold");
+    if (TargetDecl->hasAttr<SuppressMovzxZeroAttr>())
+      FuncAttrs.addAttribute("suppress_movzx_zero");
+    if (TargetDecl->hasAttr<UnfoldCmpMemAttr>())
+      FuncAttrs.addAttribute("unfold_cmp_mem");
     if (TargetDecl->hasAttr<PreferNegSbb8BitAttr>())
       FuncAttrs.addAttribute("prefer_neg_sbb_8bit");
     if (const auto *FCS = TargetDecl->getAttr<ForcedCalleeSavesAttr>())

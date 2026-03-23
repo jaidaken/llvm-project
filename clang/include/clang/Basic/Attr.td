@@ -5123,6 +5123,27 @@ def PreferNegSbb8Bit: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def AllowCmpFold: InheritableAttr {
+  let Spellings = [GNU<"allow_cmp_fold">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def SuppressMovzxZero: InheritableAttr {
+  let Spellings = [GNU<"suppress_movzx_zero">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def UnfoldCmpMem: InheritableAttr {
+  let Spellings = [GNU<"unfold_cmp_mem">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def Msvc6Schedule: InheritableAttr {
   let Spellings = [GNU<"msvc6_schedule">];
   let Subjects = SubjectList<[Function]>;
