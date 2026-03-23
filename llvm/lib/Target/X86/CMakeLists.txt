@@ -76,6 +76,7 @@ set(sources
   X86PreferSignedJcc.cpp
   X86Msvc6Restructure.cpp
   X86Msvc6Schedule.cpp
+  X86ReorderStores.cpp
   X86SuppressMovzx.cpp
   X86UnfoldCmpMem.cpp
   X86FastISel.cpp

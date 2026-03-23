@@ -5158,6 +5158,13 @@ def Msvc6Schedule: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def StoreOrder: InheritableAttr {
+  let Spellings = [GNU<"store_order">];
+  let Args = [StringArgument<"Order">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+}
+
 def Msvc6Sdtor: InheritableAttr {
   let Spellings = [GNU<"msvc6_sdtor">];
   let Args = [StringArgument<"Params">];

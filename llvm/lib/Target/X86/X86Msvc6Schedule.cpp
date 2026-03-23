@@ -35,11 +35,19 @@
 // - Removing fastcall dummy XOR EDX, EDX before thiscall calls
 // - Adjusting ESP displacements when instructions cross PUSHes
 //
+// The generalized V2 path additionally handles:
+// - 32-bit field loads (MOV32rm) without movzx conversion
+// - 0, 1, or 2+ PUSH arguments between vtable load and call
+// - No-store variant (field value is pushed as arg, not stored)
+// - Dynamic chain/call registers (not hardcoded to EDX/EAX)
+// - Non-zero vtable offsets for subobject vtables
+//
 //===----------------------------------------------------------------------===//
 
 #include "X86.h"
 #include "X86InstrInfo.h"
 #include "X86Subtarget.h"
+#include "MCTargetDesc/X86MCTargetDesc.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/Support/Debug.h"
@@ -63,10 +71,15 @@ private:
   const X86InstrInfo *TII = nullptr;
 
   bool tryInfoChainBeforeVtable(MachineBasicBlock &MBB);
+  bool tryInfoChainBeforeVtableV2(MachineBasicBlock &MBB);
 };
 } // end anonymous namespace
 
 char X86Msvc6SchedulePass::ID = 0;
+
+// ---------------------------------------------------------------------------
+// Helper predicates
+// ---------------------------------------------------------------------------
 
 /// Check if an instruction is a 32-bit register load from memory.
 static bool isLoad32(const MachineInstr &MI, Register ExpectedDest) {
@@ -106,11 +119,48 @@ static bool isPushImm(const MachineInstr &MI) {
          MI.getOpcode() == X86::PUSH32i;
 }
 
+/// Check if an instruction is any PUSH (immediate, register, or memory).
+static bool isAnyPush(const MachineInstr &MI) {
+  switch (MI.getOpcode()) {
+  case X86::PUSH32i8:
+  case X86::PUSH32i:
+  case X86::PUSH32r:
+  case X86::PUSH32rmm:
+  case X86::PUSH32rmr:
+    return true;
+  default:
+    return false;
+  }
+}
+
 /// Check if an instruction is an indirect call through memory.
 static bool isCallMem(const MachineInstr &MI) {
   return MI.getOpcode() == X86::CALL32m ||
          MI.getOpcode() == X86::FARCALL32m;
 }
+
+/// Check if an instruction is a field load: either MOVZX32rm16 or MOV32rm.
+static bool isFieldLoad(const MachineInstr &MI) {
+  return MI.getOpcode() == X86::MOVZX32rm16 ||
+         MI.getOpcode() == X86::MOV32rm;
+}
+
+/// Check if an instruction is a field store: MOV16mr or MOV32mr.
+static bool isFieldStore(const MachineInstr &MI) {
+  return MI.getOpcode() == X86::MOV16mr ||
+         MI.getOpcode() == X86::MOV32mr;
+}
+
+/// Check if an instruction is a self-XOR zeroing any register.
+static bool isXorZeroAny(const MachineInstr &MI) {
+  return (MI.getOpcode() == X86::XOR32rr ||
+          MI.getOpcode() == X86::XOR32rr_REV) &&
+         MI.getOperand(0).getReg() == MI.getOperand(1).getReg();
+}
+
+// ---------------------------------------------------------------------------
+// V1: Original rigid pattern (fast path)
+// ---------------------------------------------------------------------------
 
 /// Try to match and transform the info-chain-before-vtable pattern.
 ///
@@ -341,6 +391,280 @@ bool X86Msvc6SchedulePass::tryInfoChainBeforeVtable(MachineBasicBlock &MBB) {
   return Changed;
 }
 
+// ---------------------------------------------------------------------------
+// V2: Generalized pattern matcher
+// ---------------------------------------------------------------------------
+//
+// This handles variations that V1's rigid matching cannot:
+//
+// (a) 32-bit field loads (MOV32rm instead of MOVZX32rm16)
+//     When 32-bit, the field load stays as MOV32rm - no partial conversion.
+//
+// (b) 0, 1, or 2+ PUSH arguments between vtable load and call
+//     V1 requires exactly 1 PUSH immediate.
+//
+// (c) No-store variant - field value is pushed as an argument, not stored
+//     The store step becomes optional.
+//
+// (d) Dynamic chain/call registers
+//     V1 hardcodes ChainReg=EDX, CallBase=EAX. V2 detects them.
+//
+// (e) Non-zero vtable offset
+//     V1 requires vtable load from [thisReg+0]. V2 allows [thisReg+N].
+//
+// Generalized Clang pattern (walking backward from CALL):
+//   [0]   CALL32m [CallBase + vt_off]
+//   [1..N] 0 or more PUSHes (imm, reg, or mem)
+//   [N+1] XOR32rr ChainReg, ChainReg           (optional: fastcall dummy)
+//   [N+2] MOV16mr/MOV32mr [thisReg+off], reg   (optional: store field)
+//   [N+3] MOVZX32rm16/MOV32rm ChainReg, [ChainReg+fld] (field load)
+//   [N+4] MOV32rm ChainReg, [thisReg+info_off] (info ptr load)
+//   [N+5] MOV32rm CallBase, [thisReg+vt_disp]  (vtable load)
+//
+// Generalized MSVC 6.0 target:
+//   MOV32rm CallBase, [thisReg+info_off]  (info chain uses CallBase)
+//   field_load CallBase/sub, [CallBase+fld]
+//   MOV32rm CallBase, [thisReg+vt_disp]   (vtable load, reuses CallBase)
+//   PUSHes...
+//   store (if present)
+//   CALL32m [CallBase + vt_off]
+
+bool X86Msvc6SchedulePass::tryInfoChainBeforeVtableV2(MachineBasicBlock &MBB) {
+  bool Changed = false;
+
+  for (auto I = MBB.begin(), E = MBB.end(); I != E; ++I) {
+    MachineInstr &CallMI = *I;
+
+    // Step 1: Find an indirect call through a register base.
+    if (!isCallMem(CallMI))
+      continue;
+    if (!CallMI.getOperand(0).isReg())
+      continue;
+    Register CallBase = CallMI.getOperand(0).getReg();
+    if (CallBase == X86::NoRegister || CallBase == X86::ESP)
+      continue;
+
+    // Collect preceding non-pseudo instructions (up to 12 to allow for
+    // multiple pushes).
+    SmallVector<MachineInstr *, 12> Prev;
+    {
+      auto WalkIt = MachineBasicBlock::iterator(CallMI);
+      while (Prev.size() < 12 && WalkIt != MBB.begin()) {
+        --WalkIt;
+        if (WalkIt->isTerminator())
+          break;
+        if (!WalkIt->isPseudo())
+          Prev.push_back(&*WalkIt);
+      }
+    }
+    // Prev[0] = instruction right before CALL, etc.
+
+    if (Prev.size() < 3)
+      continue;  // minimum: field_load, info_load, vtable_load
+
+    // Step 2: Consume pushes from the front (closest to CALL).
+    int cursor = 0;
+    SmallVector<MachineInstr *, 4> Pushes;
+    while (cursor < (int)Prev.size() && isAnyPush(*Prev[cursor])) {
+      Pushes.push_back(Prev[cursor]);
+      cursor++;
+    }
+    // cursor now points past all pushes (may be 0 if no pushes)
+
+    if (cursor >= (int)Prev.size())
+      continue;
+
+    // Step 3: Optional XOR zero (fastcall dummy).
+    int XorIdx = -1;
+    if (isXorZeroAny(*Prev[cursor])) {
+      XorIdx = cursor;
+      cursor++;
+    }
+    if (cursor >= (int)Prev.size())
+      continue;
+
+    // Step 4: Optional store (MOV16mr or MOV32mr).
+    int StoreIdx = -1;
+    if (isFieldStore(*Prev[cursor])) {
+      StoreIdx = cursor;
+      cursor++;
+    }
+    if (cursor >= (int)Prev.size())
+      continue;
+
+    // Step 5: Field load - MOVZX32rm16 or MOV32rm.
+    int FieldIdx = -1;
+    if (isFieldLoad(*Prev[cursor])) {
+      FieldIdx = cursor;
+      cursor++;
+    } else {
+      continue;  // field load is mandatory
+    }
+    if (cursor >= (int)Prev.size())
+      continue;
+
+    // Step 6: Info ptr load - MOV32rm into ChainReg.
+    MachineInstr &FieldMI = *Prev[FieldIdx];
+    Register ChainReg = FieldMI.getOperand(0).getReg();
+    if (ChainReg == X86::NoRegister || ChainReg == X86::ESP)
+      continue;
+
+    int InfoIdx = -1;
+    if (isLoad32(*Prev[cursor], ChainReg)) {
+      InfoIdx = cursor;
+      cursor++;
+    } else {
+      continue;  // info load is mandatory
+    }
+    if (cursor >= (int)Prev.size())
+      continue;
+
+    // Step 7: Vtable load - MOV32rm into CallBase.
+    int VtableIdx = -1;
+    if (isLoad32(*Prev[cursor], CallBase)) {
+      VtableIdx = cursor;
+    } else {
+      continue;  // vtable load is mandatory
+    }
+
+    // Step 8: Verify relationships between the matched instructions.
+    MachineInstr &VtableMI = *Prev[VtableIdx];
+    MachineInstr &InfoMI = *Prev[InfoIdx];
+
+    // Vtable load: [thisReg + vt_disp] - any displacement allowed
+    if (!VtableMI.getOperand(1).isReg())
+      continue;
+    Register ThisReg = VtableMI.getOperand(1).getReg();
+    if (ThisReg == X86::NoRegister || ThisReg == X86::ESP)
+      continue;
+    // Verify simple addressing: scale=1, no index
+    if (VtableMI.getOperand(2).getImm() != 1 ||
+        VtableMI.getOperand(3).getReg() != X86::NoRegister)
+      continue;
+    int64_t VtableDisp = VtableMI.getOperand(4).getImm();
+
+    // Info load must be from [thisReg + nonzero_disp]
+    if (!isLoadFromBase(InfoMI, ThisReg))
+      continue;
+    int64_t InfoDisp = InfoMI.getOperand(4).getImm();
+    if (InfoDisp == 0)
+      continue;
+
+    // Field load must chain through ChainReg (info ptr result as base)
+    if (!FieldMI.getOperand(1).isReg() ||
+        FieldMI.getOperand(1).getReg() != ChainReg)
+      continue;
+
+    // If store is present, verify it writes to [thisReg + some_offset]
+    MachineInstr *StoreMI = StoreIdx >= 0 ? Prev[StoreIdx] : nullptr;
+    if (StoreMI) {
+      if (!StoreMI->getOperand(0).isReg() ||
+          StoreMI->getOperand(0).getReg() != ThisReg)
+        continue;
+    }
+
+    // Verify CallBase and ChainReg don't conflict with ThisReg.
+    // (ThisReg is typically ECX for thiscall; CallBase and ChainReg
+    // should be scratch registers like EAX/EDX.)
+    if (CallBase == ThisReg)
+      continue;
+
+    bool IsField16 = (FieldMI.getOpcode() == X86::MOVZX32rm16);
+
+    LLVM_DEBUG(dbgs() << "Msvc6Schedule V2: matched generalized pattern in "
+                      << MBB.getParent()->getName()
+                      << " (field=" << (IsField16 ? "16" : "32")
+                      << ", pushes=" << Pushes.size()
+                      << ", store=" << (StoreMI ? "yes" : "no")
+                      << ", vtDisp=" << VtableDisp << ")\n");
+
+    // Step 9: Build the MSVC 6.0 instruction sequence.
+    DebugLoc DL = VtableMI.getDebugLoc();
+    int64_t FieldDisp = FieldMI.getOperand(4).getImm();
+
+    // Determine field sub-register for 16-bit case.
+    // For 16-bit fields, MSVC 6.0 does a partial register load into the
+    // 16-bit portion of CallBase. For 32-bit fields, it stays 32-bit.
+    Register FieldDestReg;
+    unsigned FieldLoadOpcode;
+    if (IsField16) {
+      FieldDestReg =
+          Register(getX86SubSuperRegister(CallBase, 16));
+      FieldLoadOpcode = X86::MOV16rm;
+    } else {
+      // 32-bit field: stays as MOV32rm into CallBase
+      FieldDestReg = CallBase;
+      FieldLoadOpcode = X86::MOV32rm;
+    }
+
+    // 9a: Info load: MOV32rm CallBase, [thisReg + InfoDisp]
+    BuildMI(MBB, VtableMI, DL, TII->get(X86::MOV32rm), CallBase)
+        .addReg(ThisReg)
+        .addImm(InfoMI.getOperand(2).getImm())
+        .addReg(InfoMI.getOperand(3).getReg())
+        .addImm(InfoDisp)
+        .addReg(InfoMI.getOperand(5).getReg());
+
+    // 9b: Field load into CallBase (or its 16-bit sub-register)
+    BuildMI(MBB, VtableMI, DL, TII->get(FieldLoadOpcode), FieldDestReg)
+        .addReg(CallBase)
+        .addImm(FieldMI.getOperand(2).getImm())
+        .addReg(FieldMI.getOperand(3).getReg())
+        .addImm(FieldDisp)
+        .addReg(FieldMI.getOperand(5).getReg());
+
+    // 9c: Vtable load stays in place at its current position.
+    // It already loads into CallBase from [thisReg + vt_disp].
+
+    // 9d: Move all PUSHes to right after the vtable load, preserving order.
+    // Pushes were collected closest-to-CALL first, so reverse to get
+    // original program order (furthest from CALL = first to execute).
+    {
+      MachineBasicBlock::iterator InsertPt =
+          std::next(MachineBasicBlock::iterator(VtableMI));
+      for (int i = (int)Pushes.size() - 1; i >= 0; --i) {
+        MachineInstr *PushMI = Pushes[i];
+        MBB.splice(InsertPt, &MBB,
+                   MachineBasicBlock::iterator(*PushMI),
+                   std::next(MachineBasicBlock::iterator(*PushMI)));
+        // InsertPt stays valid: newly spliced instruction is before it,
+        // but we want the next push AFTER this one, so advance.
+        InsertPt = std::next(MachineBasicBlock::iterator(*PushMI));
+      }
+    }
+
+    // 9e: Move store to right before the CALL (after all pushes).
+    if (StoreMI) {
+      MBB.splice(MachineBasicBlock::iterator(CallMI), &MBB,
+                 MachineBasicBlock::iterator(*StoreMI),
+                 std::next(MachineBasicBlock::iterator(*StoreMI)));
+
+      // Update the store's source register to match the new field dest.
+      // Store operand layout: [base, scale, index, disp, seg, src]
+      if (IsField16) {
+        StoreMI->getOperand(5).setReg(FieldDestReg);
+      } else {
+        // 32-bit store: source is CallBase (same 32-bit reg)
+        StoreMI->getOperand(5).setReg(CallBase);
+      }
+    }
+
+    // 9f: Remove original info load, field load, and optional XOR.
+    InfoMI.eraseFromParent();
+    FieldMI.eraseFromParent();
+    if (XorIdx >= 0)
+      Prev[XorIdx]->eraseFromParent();
+
+    Changed = true;
+  }
+
+  return Changed;
+}
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
 bool X86Msvc6SchedulePass::runOnMachineFunction(MachineFunction &MF) {
   if (!MF.getFunction().hasFnAttribute("msvc6_schedule"))
     return false;
@@ -349,7 +673,13 @@ bool X86Msvc6SchedulePass::runOnMachineFunction(MachineFunction &MF) {
   bool Changed = false;
 
   for (MachineBasicBlock &MBB : MF) {
-    Changed |= tryInfoChainBeforeVtable(MBB);
+    // Try V1 (rigid fast path) first. If it matches, skip V2 for this block.
+    if (tryInfoChainBeforeVtable(MBB)) {
+      Changed = true;
+      continue;
+    }
+    // V2: generalized matching for patterns V1 cannot handle.
+    Changed |= tryInfoChainBeforeVtableV2(MBB);
   }
 
   return Changed;

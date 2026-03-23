@@ -2435,6 +2435,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("no_tail_call");
     if (TargetDecl->hasAttr<Msvc6ScheduleAttr>())
       FuncAttrs.addAttribute("msvc6_schedule");
+    if (const auto *SO = TargetDecl->getAttr<StoreOrderAttr>())
+      FuncAttrs.addAttribute("store_order", SO->getOrder());
     if (TargetDecl->hasAttr<AllowCmpFoldAttr>())
       FuncAttrs.addAttribute("allow_cmp_fold");
     if (TargetDecl->hasAttr<SuppressMovzxZeroAttr>())

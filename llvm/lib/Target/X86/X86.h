@@ -235,6 +235,11 @@ FunctionPass *createX86Msvc6RestructurePass();
 /// AST-order depth-first evaluation, adjusting registers simultaneously.
 FunctionPass *createX86Msvc6SchedulePass();
 
+/// Return a Machine IR pass that reorders consecutive stores to the same base
+/// register to match MSVC 6.0's source/declaration order, as specified by the
+/// store_order function attribute.
+FunctionPass *createX86ReorderStoresPass();
+
 /// Return a Machine IR pass that removes the XOR zeroing before bare
 /// subreg loads when the upper bits are dead (MSVC 6.0 pattern).
 FunctionPass *createX86SuppressMovzxPass();
