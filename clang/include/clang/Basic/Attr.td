@@ -4955,6 +4955,13 @@ def XOR32rr_REV: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def NoCopyProp: InheritableAttr {
+  let Spellings = [GNU<"no_copy_prop">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def NoBoolMask: InheritableAttr {
   let Spellings = [GNU<"no_bool_mask">];
   let Subjects = SubjectList<[Function]>;
@@ -5116,8 +5123,22 @@ def NoTailCall: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def CallTail: InheritableAttr {
+  let Spellings = [GNU<"call_tail">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def PreferNegSbb8Bit: InheritableAttr {
   let Spellings = [GNU<"prefer_neg_sbb_8bit">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def Prefer8BitOps: InheritableAttr {
+  let Spellings = [GNU<"prefer_8bit_ops">];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
   let SimpleHandler = 1;
@@ -5146,6 +5167,13 @@ def UnfoldCmpMem: InheritableAttr {
 
 def PreferMovTest: InheritableAttr {
   let Spellings = [GNU<"prefer_mov_test">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def InsertRedundantCmp: InheritableAttr {
+  let Spellings = [GNU<"insert_redundant_cmp">];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
   let SimpleHandler = 1;

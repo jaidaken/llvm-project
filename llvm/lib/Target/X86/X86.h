@@ -171,6 +171,10 @@ FunctionPass *createX86NoTestSeteFoldPass();
 /// for functions with the prefer_neg_sbb attribute.
 FunctionPass *createX86PreferNegSbbPass();
 
+/// Return a Machine IR pass that converts XOR+CMP+SETcc to SUB8+NEG8+SBB+INC
+/// for functions with the prefer_8bit_ops attribute.
+FunctionPass *createX86Prefer8BitOpsPass();
+
 /// Return a Machine IR pass that routes sete through ECX instead of AL
 /// for functions with the prefer_sete_ecx attribute.
 FunctionPass *createX86PreferSeteEcxPass();
@@ -193,6 +197,10 @@ FunctionPass *createX86PreferVtableEdxPass();
 FunctionPass *createX86PreferBranchBoolPass();
 FunctionPass *createX86PreferMovAndCmpPass();
 FunctionPass *createX86MergeReturnZeroPass();
+
+/// Return a Machine IR pass that converts TAILJMPm to CALL32m + RET
+/// for functions with the call_tail attribute (MSVC 6.0 call-through-vtable).
+FunctionPass *createX86CallTailPass();
 
 /// Return a Machine IR pass that converts XOR32rr + INC32r to MOV32ri 1
 /// for functions with the prefer_mov_imm attribute.
@@ -243,6 +251,10 @@ FunctionPass *createX86ReorderStoresPass();
 /// Return a Machine IR pass that removes the XOR zeroing before bare
 /// subreg loads when the upper bits are dead (MSVC 6.0 pattern).
 FunctionPass *createX86SuppressMovzxPass();
+
+/// Return a Machine IR pass that inserts a redundant CMP [mem], 0 after
+/// DEC [mem] to reproduce MSVC 6.0's dec+cmp pattern.
+FunctionPass *createX86InsertRedundantCmpPass();
 
 /// Return a Machine IR pass that unfolds CMP [mem],imm into
 /// MOV reg,[mem] + CMP reg,imm for MSVC 6.0 bool accessor patterns.

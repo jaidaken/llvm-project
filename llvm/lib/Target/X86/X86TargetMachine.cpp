@@ -610,6 +610,9 @@ void X86PassConfig::addPreEmitPass() {
   }
   addPass(createX86CompressEVEXPass());
   // bw1-decomp passes: ordering matters.
+  // CallTail must run early: it replaces TAILJMPm (created by ExpandPseudo)
+  // with CALL32m + RET before other passes modify the tail region.
+  addPass(createX86CallTailPass());
   addPass(createX86ReorderStoresPass());
   // - PreferNegSbb must run before PreferXOR8 (it matches XOR32rr self-xor
   //   that PreferXOR8 would downsize to XOR8rr).
@@ -627,6 +630,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86PreferIntFloatForwardPass());
   addPass(createX86PreferFcompFnstswPass());
   addPass(createX86NoTestSeteFoldPass());
+  addPass(createX86Prefer8BitOpsPass());
   addPass(createX86PreferNegSbbPass());
   addPass(createX86SwapCmpRegistersPass());
   addPass(createX86PreferSeteEcxPass());
@@ -648,6 +652,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86PreferAndMaskPass());
   addPass(createX86ReversedOpsPass());
   addPass(createX86FixupMovzxOverlapPass());
+  addPass(createX86InsertRedundantCmpPass());
   addPass(createX86ExpandMovzxPass());
   addPass(createX86SuppressMovzxPass());
   addPass(createX86Msvc6PartialReturnPass());

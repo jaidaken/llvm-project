@@ -54,6 +54,7 @@ set(sources
   X86OrMinusOne.cpp
   X86NoTestSeteFold.cpp
   X86PreferNegSbb.cpp
+  X86Prefer8BitOps.cpp
   X86PreferSeteEcx.cpp
   X86PreferFmulMem.cpp
   X86PreferPopCleanup.cpp
@@ -66,6 +67,7 @@ set(sources
   X86PreferBranchBool.cpp
   X86PreferMovAndCmp.cpp
   X86MergeReturnZero.cpp
+  X86CallTail.cpp
   X86SwapBufRegister.cpp
   X86SwapCmpRegisters.cpp
   X86PreferTripCountLoop.cpp
@@ -78,6 +80,7 @@ set(sources
   X86Msvc6Schedule.cpp
   X86ReorderStores.cpp
   X86SuppressMovzx.cpp
+  X86InsertRedundantCmp.cpp
   X86UnfoldCmpMem.cpp
   X86FastISel.cpp
   X86FixupBWInsts.cpp

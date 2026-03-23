@@ -2393,6 +2393,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::MOV32rr_REV);
     if (TargetDecl->hasAttr<XOR32rr_REVAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::XOR32rr_REV);
+    if (TargetDecl->hasAttr<NoCopyPropAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::NoCopyProp);
     if (TargetDecl->hasAttr<NoBoolMaskAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::NoBoolMask);
     if (TargetDecl->hasAttr<ExpandMovzxAttr>())
@@ -2433,6 +2435,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("prefer_div");
     if (TargetDecl->hasAttr<NoTailCallAttr>())
       FuncAttrs.addAttribute("no_tail_call");
+    if (TargetDecl->hasAttr<CallTailAttr>())
+      FuncAttrs.addAttribute("call_tail");
     if (TargetDecl->hasAttr<Msvc6ScheduleAttr>())
       FuncAttrs.addAttribute("msvc6_schedule");
     if (const auto *SO = TargetDecl->getAttr<StoreOrderAttr>())
@@ -2445,8 +2449,12 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("unfold_cmp_mem");
     if (TargetDecl->hasAttr<PreferMovTestAttr>())
       FuncAttrs.addAttribute("prefer_mov_test");
+    if (TargetDecl->hasAttr<InsertRedundantCmpAttr>())
+      FuncAttrs.addAttribute("insert_redundant_cmp");
     if (TargetDecl->hasAttr<PreferNegSbb8BitAttr>())
       FuncAttrs.addAttribute("prefer_neg_sbb_8bit");
+    if (TargetDecl->hasAttr<Prefer8BitOpsAttr>())
+      FuncAttrs.addAttribute("prefer_8bit_ops");
     if (const auto *FCS = TargetDecl->getAttr<ForcedCalleeSavesAttr>())
       FuncAttrs.addAttribute("forced_callee_saves", FCS->getRegisters());
     if (const auto *TB = TargetDecl->getAttr<TrailingBytesAttr>())

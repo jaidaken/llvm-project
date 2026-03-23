@@ -424,9 +424,10 @@ bool X86Msvc6SchedulePass::tryInfoChainBeforeVtable(MachineBasicBlock &MBB) {
 // Generalized MSVC 6.0 target:
 //   MOV32rm CallBase, [thisReg+info_off]  (info chain uses CallBase)
 //   field_load CallBase/sub, [CallBase+fld]
+//   MOV32mr [thisReg+off], CallBase       (32-bit store before vtable, if present)
 //   MOV32rm CallBase, [thisReg+vt_disp]   (vtable load, reuses CallBase)
 //   PUSHes...
-//   store (if present)
+//   MOV16mr [thisReg+off], sub            (16-bit store after pushes, if present)
 //   CALL32m [CallBase + vt_off]
 
 bool X86Msvc6SchedulePass::tryInfoChainBeforeVtableV2(MachineBasicBlock &MBB) {
@@ -613,10 +614,22 @@ bool X86Msvc6SchedulePass::tryInfoChainBeforeVtableV2(MachineBasicBlock &MBB) {
         .addImm(FieldDisp)
         .addReg(FieldMI.getOperand(5).getReg());
 
-    // 9c: Vtable load stays in place at its current position.
+    // 9c: For 32-bit fields with a store, the store MUST go between the
+    // field load and the vtable load. The vtable load clobbers CallBase,
+    // which holds the 32-bit field value. For 16-bit fields, the store
+    // uses a sub-register (e.g., DX) that survives the vtable load into
+    // the full register (e.g., EAX), so it can go after pushes.
+    if (StoreMI && !IsField16) {
+      MBB.splice(MachineBasicBlock::iterator(VtableMI), &MBB,
+                 MachineBasicBlock::iterator(*StoreMI),
+                 std::next(MachineBasicBlock::iterator(*StoreMI)));
+      StoreMI->getOperand(5).setReg(CallBase);
+    }
+
+    // 9d: Vtable load stays in place at its current position.
     // It already loads into CallBase from [thisReg + vt_disp].
 
-    // 9d: Move all PUSHes to right after the vtable load, preserving order.
+    // 9e: Move all PUSHes to right after the vtable load, preserving order.
     // Pushes were collected closest-to-CALL first, so reverse to get
     // original program order (furthest from CALL = first to execute).
     {
@@ -627,29 +640,19 @@ bool X86Msvc6SchedulePass::tryInfoChainBeforeVtableV2(MachineBasicBlock &MBB) {
         MBB.splice(InsertPt, &MBB,
                    MachineBasicBlock::iterator(*PushMI),
                    std::next(MachineBasicBlock::iterator(*PushMI)));
-        // InsertPt stays valid: newly spliced instruction is before it,
-        // but we want the next push AFTER this one, so advance.
         InsertPt = std::next(MachineBasicBlock::iterator(*PushMI));
       }
     }
 
-    // 9e: Move store to right before the CALL (after all pushes).
-    if (StoreMI) {
+    // 9f: For 16-bit fields, move store to right before the CALL.
+    if (StoreMI && IsField16) {
       MBB.splice(MachineBasicBlock::iterator(CallMI), &MBB,
                  MachineBasicBlock::iterator(*StoreMI),
                  std::next(MachineBasicBlock::iterator(*StoreMI)));
-
-      // Update the store's source register to match the new field dest.
-      // Store operand layout: [base, scale, index, disp, seg, src]
-      if (IsField16) {
-        StoreMI->getOperand(5).setReg(FieldDestReg);
-      } else {
-        // 32-bit store: source is CallBase (same 32-bit reg)
-        StoreMI->getOperand(5).setReg(CallBase);
-      }
+      StoreMI->getOperand(5).setReg(FieldDestReg);
     }
 
-    // 9f: Remove original info load, field load, and optional XOR.
+    // 9g: Remove original info load, field load, and optional XOR.
     InfoMI.eraseFromParent();
     FieldMI.eraseFromParent();
     if (XorIdx >= 0)
