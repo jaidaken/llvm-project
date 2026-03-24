@@ -4997,6 +4997,13 @@ def PreferIncDecByte: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def PreferMemoryDec: InheritableAttr {
+  let Spellings = [GNU<"prefer_memory_dec">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def PreferOrMinusOne: InheritableAttr {
   let Spellings = [GNU<"prefer_or_minus_one">];
   let Subjects = SubjectList<[Function]>;
@@ -5062,6 +5069,27 @@ def NoRet: InheritableAttr {
 
 def Msvc6RegAlloc: InheritableAttr {
   let Spellings = [GNU<"msvc6_regalloc">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def Msvc6RegSwap: InheritableAttr {
+  let Spellings = [GNU<"msvc6_regswap">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def Msvc6FastcallRegFix: InheritableAttr {
+  let Spellings = [GNU<"msvc6_fastcall_regfix">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def ForceThisEsi: InheritableAttr {
+  let Spellings = [GNU<"force_this_esi">];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
   let SimpleHandler = 1;
@@ -5165,6 +5193,20 @@ def UnfoldCmpMem: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def UnfoldAluMem: InheritableAttr {
+  let Spellings = [GNU<"unfold_alu_mem">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def ZeroViaXor: InheritableAttr {
+  let Spellings = [GNU<"zero_via_xor">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def PreferMovTest: InheritableAttr {
   let Spellings = [GNU<"prefer_mov_test">];
   let Subjects = SubjectList<[Function]>;
@@ -5198,4 +5240,11 @@ def Msvc6Sdtor: InheritableAttr {
   let Args = [StringArgument<"Params">];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
+}
+
+def SplitCondJmp: InheritableAttr {
+  let Spellings = [GNU<"split_cond_jmp">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
 }

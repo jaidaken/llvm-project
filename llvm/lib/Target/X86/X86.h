@@ -130,6 +130,10 @@ FunctionPass *createX86FixupMovzxOverlapPass();
 /// and MOV32ri small_imm+RET to MOV8ri+RET (MSVC 6.0 partial return pattern).
 FunctionPass *createX86Msvc6PartialReturnPass();
 
+/// Return a Machine IR pass that swaps EAX<->ECX throughout a function when
+/// LLVM assigned them opposite to MSVC 6.0's fastcall this-ptr pattern.
+FunctionPass *createX86Msvc6FastcallRegFixPass();
+
 /// Return a Machine IR pass that converts reg-reg arithmetic ops to their
 /// reversed encoding variants (e.g., ADD32rr -> ADD32rr_REV) for MSVC 6.0.
 FunctionPass *createX86ReversedOpsPass();
@@ -154,6 +158,10 @@ FunctionPass *createX86PreferXOR8Pass();
 /// Return a Machine IR pass that replaces movzx+add/sub+mov byte sequences
 /// with INC8m/DEC8m for functions with prefer_inc_dec_byte.
 FunctionPass *createX86PreferIncDecBytePass();
+
+/// Return a Machine IR pass that folds load+dec+store sequences into
+/// memory-direct DEC for functions with prefer_memory_dec.
+FunctionPass *createX86PreferMemoryDecPass();
 
 /// Return a Machine IR pass that converts FLDZ/FLD1 pseudo instructions to
 /// constant pool memory loads for functions with the suppress_fp_imm attribute.
@@ -202,14 +210,26 @@ FunctionPass *createX86MergeReturnZeroPass();
 /// for functions with the call_tail attribute (MSVC 6.0 call-through-vtable).
 FunctionPass *createX86CallTailPass();
 
+/// Return a Machine IR pass that splits a near conditional jump over RET
+/// into je skip; jmp target; skip: ret (MSVC 6.0 null-check thunk pattern).
+FunctionPass *createX86SplitCondJmpPass();
+
 /// Return a Machine IR pass that converts XOR32rr + INC32r to MOV32ri 1
 /// for functions with the prefer_mov_imm attribute.
 FunctionPass *createX86PreferMovImmPass();
+
+/// Return a Machine IR pass that forces `this` (ECX) into ESI at function
+/// entry and rewrites all subsequent ECX uses to ESI (MSVC 6.0 pattern).
+FunctionPass *createX86ForceThisToEsiPass();
 
 /// Return a Machine IR pass that swaps EBX<->ESI when the primary memory
 /// base is in EBX but MSVC 6.0 expects it in ESI.
 FunctionPass *createX86SwapBufRegisterPass();
 FunctionPass *createX86SwapCmpRegistersPass();
+
+/// Return a Machine IR pass that rewrites ECX field load + EAX sete to
+/// EDX field load + ECX sete for MSVC 6.0 bitfield accessor functions.
+FunctionPass *createX86Msvc6RegSwapPass();
 
 /// Return a Machine IR pass that rewrites add/cmp/ja loop latches to
 /// dec ebp/jne with trip count precomputation.
@@ -259,6 +279,16 @@ FunctionPass *createX86InsertRedundantCmpPass();
 /// Return a Machine IR pass that unfolds CMP [mem],imm into
 /// MOV reg,[mem] + CMP reg,imm for MSVC 6.0 bool accessor patterns.
 FunctionPass *createX86UnfoldCmpMemPass();
+
+/// Return a Machine IR pass that unfolds memory-source ALU instructions
+/// (e.g., ADD32rm) into MOV+register-register ALU (e.g., MOV32rm+ADD32rr)
+/// for functions with the unfold_alu_mem attribute (MSVC 6.0 pattern).
+FunctionPass *createX86UnfoldAluMemPass();
+
+/// Return a Machine IR pass that converts immediate-zero stores (MOV32mi 0)
+/// into XOR+MOV32mr for functions with the zero_via_xor attribute (MSVC 6.0
+/// pattern of zeroing a register then storing through it).
+FunctionPass *createX86ZeroViaXorPass();
 
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();

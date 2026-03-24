@@ -41,6 +41,7 @@ set(sources
   X86PreTileConfig.cpp
   X86ExpandPseudo.cpp
   X86ExpandMovzx.cpp
+  X86Msvc6FastcallRegFix.cpp
   X86Msvc6PartialReturn.cpp
   X86FixupMovzxOverlap.cpp
   X86ReversedOps.cpp
@@ -50,6 +51,7 @@ set(sources
   X86PreferIntFloatForward.cpp
   X86PreferXOR8.cpp
   X86PreferIncDecByte.cpp
+  X86PreferMemoryDec.cpp
   X86SuppressFPImm.cpp
   X86OrMinusOne.cpp
   X86NoTestSeteFold.cpp
@@ -68,8 +70,11 @@ set(sources
   X86PreferMovAndCmp.cpp
   X86MergeReturnZero.cpp
   X86CallTail.cpp
+  X86SplitCondJmp.cpp
+  X86ForceThisToEsi.cpp
   X86SwapBufRegister.cpp
   X86SwapCmpRegisters.cpp
+  X86Msvc6RegSwap.cpp
   X86PreferTripCountLoop.cpp
   X86PreferEarlyBufAdvance.cpp
   X86InterleaveS2Update.cpp
@@ -82,6 +87,8 @@ set(sources
   X86SuppressMovzx.cpp
   X86InsertRedundantCmp.cpp
   X86UnfoldCmpMem.cpp
+  X86UnfoldAluMem.cpp
+  X86ZeroViaXor.cpp
   X86FastISel.cpp
   X86FixupBWInsts.cpp
   X86FixupLEAs.cpp

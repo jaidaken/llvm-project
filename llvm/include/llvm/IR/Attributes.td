@@ -471,6 +471,9 @@ def : MergeRule<"setAND<MustProgressAttr>">;
 def MOV32rr_REV : EnumAttr<"MOV32rr_REV", IntersectPreserve, [FnAttr]>;
 def XOR32rr_REV : EnumAttr<"XOR32rr_REV", IntersectPreserve, [FnAttr]>;
 
+/// Skip forward copy propagation (preserves MSVC 6.0 register usage after MOV).
+def NoCopyProp : EnumAttr<"NoCopyProp", IntersectPreserve, [FnAttr]>;
+
 /// Suppress "and al, 1" masking for bool (i1) return values.
 def NoBoolMask : EnumAttr<"NoBoolMask", IntersectPreserve, [FnAttr]>;
 
@@ -485,6 +488,9 @@ def PreferXOR8 : EnumAttr<"PreferXOR8", IntersectPreserve, [FnAttr]>;
 
 /// Replace movzx+add/sub+mov byte sequences with INC8m/DEC8m.
 def PreferIncDecByte : EnumAttr<"PreferIncDecByte", IntersectPreserve, [FnAttr]>;
+
+/// Fold load+dec+store sequences into memory-direct DEC.
+def PreferMemoryDec : EnumAttr<"PreferMemoryDec", IntersectPreserve, [FnAttr]>;
 
 /// Convert MOV32ri reg, 0xFFFFFFFF to OR32ri8 reg, -1.
 def PreferOrMinusOne : EnumAttr<"PreferOrMinusOne", IntersectPreserve, [FnAttr]>;
@@ -507,6 +513,12 @@ def NoRet : EnumAttr<"NoRet", IntersectPreserve, [FnAttr]>;
 
 /// Use MSVC 6.0 register allocation preferences (ESI for this, then EDI, EBX).
 def Msvc6RegAlloc : EnumAttr<"Msvc6RegAlloc", IntersectPreserve, [FnAttr]>;
+
+/// Swap ECX field load + EAX sete to EDX + ECX for MSVC 6.0 bitfield accessors.
+def Msvc6RegSwap : EnumAttr<"Msvc6RegSwap", IntersectPreserve, [FnAttr]>;
+
+/// Force this (ECX) into ESI at function entry and rewrite all uses.
+def ForceThisEsi : EnumAttr<"ForceThisEsi", IntersectPreserve, [FnAttr]>;
 
 /// Fold fld+fmulp into memory-form fmul dword ptr [mem].
 def PreferFmulMem : EnumAttr<"PreferFmulMem", IntersectPreserve, [FnAttr]>;

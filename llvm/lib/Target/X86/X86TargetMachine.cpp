@@ -610,9 +610,14 @@ void X86PassConfig::addPreEmitPass() {
   }
   addPass(createX86CompressEVEXPass());
   // bw1-decomp passes: ordering matters.
+  // ForceThisToEsi must run before all other bw1-decomp passes: it rewrites
+  // ECX->ESI throughout the function so subsequent passes see the correct regs.
+  addPass(createX86ForceThisToEsiPass());
   // CallTail must run early: it replaces TAILJMPm (created by ExpandPseudo)
   // with CALL32m + RET before other passes modify the tail region.
   addPass(createX86CallTailPass());
+  // SplitCondJmp splits near Jcc+RET into short-Je+JMP+RET (MSVC 6.0 thunks).
+  addPass(createX86SplitCondJmpPass());
   addPass(createX86ReorderStoresPass());
   // - PreferNegSbb must run before PreferXOR8 (it matches XOR32rr self-xor
   //   that PreferXOR8 would downsize to XOR8rr).
@@ -633,12 +638,14 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86Prefer8BitOpsPass());
   addPass(createX86PreferNegSbbPass());
   addPass(createX86SwapCmpRegistersPass());
+  addPass(createX86Msvc6RegSwapPass());
   addPass(createX86PreferSeteEcxPass());
   addPass(createX86PreferFmulMemPass());
   addPass(createX86PreferPopCleanupPass());
   addPass(createX86PreferXOR8Pass());
   addPass(createX86OrMinusOnePass());
   addPass(createX86PreferIncDecBytePass());
+  addPass(createX86PreferMemoryDecPass());
   addPass(createX86PreferAddMemPass());
   addPass(createX86PreferMovImmPass());
   addPass(createX86PreferMovPushPass());
@@ -650,9 +657,16 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86MergeReturnZeroPass());
   addPass(createX86PreferThiscallReorderPass());
   addPass(createX86PreferAndMaskPass());
+  addPass(createX86UnfoldAluMemPass());
+  addPass(createX86ZeroViaXorPass());
+  addPass(createX86Msvc6FastcallRegFixPass());
   addPass(createX86ReversedOpsPass());
   addPass(createX86FixupMovzxOverlapPass());
   addPass(createX86InsertRedundantCmpPass());
+  // Second run of UnfoldCmpMem: insert_redundant_cmp may insert CMP [mem], 0
+  // after DEC [mem]. The first run (line 626) already handled normal cases;
+  // this run converts the newly-inserted CMPs into MOV+TEST sequences.
+  addPass(createX86UnfoldCmpMemPass());
   addPass(createX86ExpandMovzxPass());
   addPass(createX86SuppressMovzxPass());
   addPass(createX86Msvc6PartialReturnPass());

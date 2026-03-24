@@ -2405,6 +2405,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::PreferXOR8);
     if (TargetDecl->hasAttr<PreferIncDecByteAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::PreferIncDecByte);
+    if (TargetDecl->hasAttr<PreferMemoryDecAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::PreferMemoryDec);
     if (TargetDecl->hasAttr<PreferOrMinusOneAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::PreferOrMinusOne);
     if (TargetDecl->hasAttr<NoTestSeteFoldAttr>())
@@ -2421,6 +2423,12 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
     }
     if (TargetDecl->hasAttr<Msvc6RegAllocAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::Msvc6RegAlloc);
+    if (TargetDecl->hasAttr<Msvc6RegSwapAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::Msvc6RegSwap);
+    if (TargetDecl->hasAttr<Msvc6FastcallRegFixAttr>())
+      FuncAttrs.addAttribute("msvc6_fastcall_regfix");
+    if (TargetDecl->hasAttr<ForceThisEsiAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::ForceThisEsi);
     if (TargetDecl->hasAttr<PreferFmulMemAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::PreferFmulMem);
     if (TargetDecl->hasAttr<PreferPopCleanupAttr>())
@@ -2447,6 +2455,10 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("suppress_movzx_zero");
     if (TargetDecl->hasAttr<UnfoldCmpMemAttr>())
       FuncAttrs.addAttribute("unfold_cmp_mem");
+    if (TargetDecl->hasAttr<UnfoldAluMemAttr>())
+      FuncAttrs.addAttribute("unfold_alu_mem");
+    if (TargetDecl->hasAttr<ZeroViaXorAttr>())
+      FuncAttrs.addAttribute("zero_via_xor");
     if (TargetDecl->hasAttr<PreferMovTestAttr>())
       FuncAttrs.addAttribute("prefer_mov_test");
     if (TargetDecl->hasAttr<InsertRedundantCmpAttr>())
@@ -2468,6 +2480,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("msvc6_sdtor", Sdtor->getParams());
       FuncAttrs.addAttribute(llvm::Attribute::NoCalleeSaves);
     }
+    if (TargetDecl->hasAttr<SplitCondJmpAttr>())
+      FuncAttrs.addAttribute("split_cond_jmp");
 
     if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
       AddAttributesFromFunctionProtoType(
