@@ -5193,6 +5193,13 @@ def UnfoldCmpMem: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def UnfoldCmpMemEcx: InheritableAttr {
+  let Spellings = [GNU<"unfold_cmp_mem_ecx">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def UnfoldAluMem: InheritableAttr {
   let Spellings = [GNU<"unfold_alu_mem">];
   let Subjects = SubjectList<[Function]>;

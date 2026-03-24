@@ -2455,6 +2455,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("suppress_movzx_zero");
     if (TargetDecl->hasAttr<UnfoldCmpMemAttr>())
       FuncAttrs.addAttribute("unfold_cmp_mem");
+    if (TargetDecl->hasAttr<UnfoldCmpMemEcxAttr>())
+      FuncAttrs.addAttribute("unfold_cmp_mem_ecx");
     if (TargetDecl->hasAttr<UnfoldAluMemAttr>())
       FuncAttrs.addAttribute("unfold_alu_mem");
     if (TargetDecl->hasAttr<ZeroViaXorAttr>())

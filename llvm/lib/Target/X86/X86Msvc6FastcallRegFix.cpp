@@ -52,7 +52,7 @@ public:
 char X86Msvc6FastcallRegFixPass::ID = 0;
 
 /// Map a register to its swapped counterpart (EAX<->ECX and sub-registers).
-static unsigned swapReg(unsigned Reg) {
+static unsigned swapRegAC(unsigned Reg) {
   switch (Reg) {
   case X86::EAX: return X86::ECX;
   case X86::ECX: return X86::EAX;
@@ -62,6 +62,21 @@ static unsigned swapReg(unsigned Reg) {
   case X86::CL:  return X86::AL;
   case X86::AH:  return X86::CH;
   case X86::CH:  return X86::AH;
+  default: return Reg;
+  }
+}
+
+/// Map a register to its swapped counterpart (ECX<->EDX and sub-registers).
+static unsigned swapRegCD(unsigned Reg) {
+  switch (Reg) {
+  case X86::ECX: return X86::EDX;
+  case X86::EDX: return X86::ECX;
+  case X86::CX:  return X86::DX;
+  case X86::DX:  return X86::CX;
+  case X86::CL:  return X86::DL;
+  case X86::DL:  return X86::CL;
+  case X86::CH:  return X86::DH;
+  case X86::DH:  return X86::CH;
   default: return Reg;
   }
 }
@@ -107,28 +122,98 @@ bool X86Msvc6FastcallRegFixPass::runOnMachineFunction(MachineFunction &MF) {
       StoresViaECX++;
   }
 
+  // Phase 1: EAX<->ECX swap.
   // Only swap when ALL stores use the wrong register (ECX instead of EAX).
   // If both registers are used as bases, the situation is ambiguous - skip.
-  if (StoresViaECX == 0)
-    return false;
-  if (StoresViaEAX > 0)
-    return false;
+  bool NeedACSwap = (StoresViaECX > 0 && StoresViaEAX == 0);
 
-  // The registers are swapped. Walk ALL instructions in the function,
-  // swap every occurrence of EAX<->ECX (and sub-registers) in all operands.
-  // Skip the entry MOV itself.
   bool Changed = false;
-  for (MachineBasicBlock &MBB : MF) {
-    for (MachineInstr &MI : MBB) {
-      if (&MI == EntryMov)
-        continue;
-      for (MachineOperand &MO : MI.operands()) {
-        if (!MO.isReg())
+  if (NeedACSwap) {
+    for (MachineBasicBlock &MBB : MF) {
+      for (MachineInstr &MI : MBB) {
+        if (&MI == EntryMov)
           continue;
-        unsigned NewReg = swapReg(MO.getReg());
-        if (NewReg != MO.getReg()) {
-          MO.setReg(NewReg);
-          Changed = true;
+        for (MachineOperand &MO : MI.operands()) {
+          if (!MO.isReg())
+            continue;
+          unsigned NewReg = swapRegAC(MO.getReg());
+          if (NewReg != MO.getReg()) {
+            MO.setReg(NewReg);
+            Changed = true;
+          }
+        }
+      }
+    }
+  }
+
+  // Phase 2: ECX<->EDX swap for shuttle register.
+  // After the entry MOV (eax=ecx), MSVC loads the stack param into ECX and
+  // uses EDX as a shuttle register for copying data. LLVM may use ECX as the
+  // shuttle instead of EDX. Detect this by checking if EDX is used as a
+  // load destination or store source in the entry block. If not, but ECX is
+  // used that way (beyond the param load), swap ECX<->EDX for those uses.
+  //
+  // Pattern: mov ecx,[esp+N] (param load) then mov edx,[ecx+M] (shuttle load)
+  // If LLVM generates: mov ecx,[esp+N] then mov ecx,[ecx+M] we need to swap.
+  //
+  // Heuristic: count non-param loads into EDX vs ECX. If ECX is used as both
+  // the param pointer and the shuttle (load dest after the param load), swap.
+  unsigned LoadsIntoEDX = 0;
+  unsigned LoadsIntoECX = 0;
+  bool SeenParamLoad = false;
+
+  for (MachineInstr &MI : EntryMBB) {
+    if (&MI == EntryMov)
+      continue;
+    unsigned Opc = MI.getOpcode();
+
+    // Detect param load: MOV32rm into ECX from ESP-relative address
+    if (!SeenParamLoad && Opc == X86::MOV32rm &&
+        MI.getOperand(0).getReg() == X86::ECX &&
+        MI.getOperand(1).getReg() == X86::ESP) {
+      SeenParamLoad = true;
+      continue;
+    }
+
+    // After param load, count loads into ECX vs EDX
+    if (SeenParamLoad) {
+      if (Opc == X86::MOV32rm || Opc == X86::MOV16rm || Opc == X86::MOV8rm ||
+          Opc == X86::MOVZX32rm8 || Opc == X86::MOVZX32rm16) {
+        unsigned DstReg = MI.getOperand(0).getReg();
+        if (DstReg == X86::EDX || DstReg == X86::DL || DstReg == X86::DX)
+          LoadsIntoEDX++;
+        else if (DstReg == X86::ECX || DstReg == X86::CL || DstReg == X86::CX)
+          LoadsIntoECX++;
+      }
+    }
+  }
+
+  // If MSVC would use EDX as shuttle but LLVM uses ECX, swap ECX<->EDX
+  // for everything except the entry MOV and the param load from ESP.
+  if (SeenParamLoad && LoadsIntoECX > 0 && LoadsIntoEDX == 0) {
+    SeenParamLoad = false;
+    for (MachineBasicBlock &MBB : MF) {
+      for (MachineInstr &MI : MBB) {
+        if (&MI == EntryMov)
+          continue;
+        // Skip the param load (MOV32rm ECX, [ESP+N])
+        if (!SeenParamLoad && MI.getOpcode() == X86::MOV32rm &&
+            MI.getOperand(0).getReg() == X86::ECX &&
+            MI.getOperand(1).getReg() == X86::ESP) {
+          SeenParamLoad = true;
+          continue;
+        }
+        if (!SeenParamLoad)
+          continue;
+        // Swap ECX<->EDX in all subsequent instructions
+        for (MachineOperand &MO : MI.operands()) {
+          if (!MO.isReg())
+            continue;
+          unsigned NewReg = swapRegCD(MO.getReg());
+          if (NewReg != MO.getReg()) {
+            MO.setReg(NewReg);
+            Changed = true;
+          }
         }
       }
     }

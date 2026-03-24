@@ -10,12 +10,16 @@
 // rather than comparing memory directly. This pass unfolds CMP [mem],imm
 // into MOV reg,[mem] + CMP/TEST reg patterns.
 //
-// Two modes (controlled by separate attributes):
+// Three modes (controlled by separate attributes):
 //
-// 1. unfold_cmp_mem: CMP+SETcc pattern (bool accessors)
+// 1. unfold_cmp_mem: CMP+SETcc pattern with EDX/DL scratch (bool accessors)
 //    mov dl,[mem]; xor eax,eax; cmp dl,imm; sete al
 //
-// 2. prefer_mov_test: CMP+Jcc pattern (branch conditions)
+// 2. unfold_cmp_mem_ecx: CMP+SETcc pattern with ECX/CL scratch
+//    mov cl,[mem]; xor eax,eax; cmp cl,imm; sete al
+//    (for use with msvc6_regswap which expects the field load in ECX)
+//
+// 3. prefer_mov_test: CMP+Jcc pattern (branch conditions)
 //    mov eax,[mem]; test eax,eax; jne label  (when imm==0)
 //    mov eax,[mem]; cmp eax,imm; jne label   (when imm!=0)
 //
@@ -85,7 +89,17 @@ static unsigned getTestRrForCmpMi(unsigned Opc) {
 }
 
 /// For the SETcc variant, MSVC uses EDX/DL as scratch (EAX holds sete result).
-static Register getScratchRegForSetcc(unsigned CmpOpc) {
+static Register getScratchRegForSetcc(unsigned CmpOpc, bool UseEcx = false) {
+  if (UseEcx) {
+    switch (CmpOpc) {
+    case X86::CMP8mi:   return X86::CL;
+    case X86::CMP32mi:
+    case X86::CMP32mi8: return X86::ECX;
+    case X86::CMP16mi:
+    case X86::CMP16mi8: return X86::CX;
+    default: return X86::ECX;
+    }
+  }
   switch (CmpOpc) {
   case X86::CMP8mi:   return X86::DL;
   case X86::CMP32mi:
@@ -114,7 +128,9 @@ static bool isJcc(const MachineInstr &MI) {
 }
 
 bool X86UnfoldCmpMemPass::runOnMachineFunction(MachineFunction &MF) {
-  bool EnableSetcc = MF.getFunction().hasFnAttribute("unfold_cmp_mem");
+  bool EnableSetccEdx = MF.getFunction().hasFnAttribute("unfold_cmp_mem");
+  bool EnableSetccEcx = MF.getFunction().hasFnAttribute("unfold_cmp_mem_ecx");
+  bool EnableSetcc = EnableSetccEdx || EnableSetccEcx;
   bool EnableJcc = MF.getFunction().hasFnAttribute("prefer_mov_test");
 
   if (!EnableSetcc && !EnableJcc)
@@ -182,7 +198,7 @@ bool X86UnfoldCmpMemPass::runOnMachineFunction(MachineFunction &MF) {
 
       // Choose scratch register based on variant.
       Register ScratchReg = IsSETccVariant
-          ? getScratchRegForSetcc(CmpOpc)
+          ? getScratchRegForSetcc(CmpOpc, EnableSetccEcx)
           : getScratchRegForJcc(CmpOpc);
 
       // === Build the replacement sequence ===
