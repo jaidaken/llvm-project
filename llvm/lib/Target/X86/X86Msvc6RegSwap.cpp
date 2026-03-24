@@ -124,12 +124,35 @@ bool X86Msvc6RegSwapPass::runOnMachineFunction(MachineFunction &MF) {
           FieldMI->getOperand(0).getReg() != X86::ECX)
         continue;
 
+      // Walk backward to find the info load (MOV32rm into ECX from [ECX+N]).
+      // This is the pointer chain root: mov ecx, [ecx+0x28]
+      MachineInstr *InfoMI = nullptr;
+      if (i >= 4) {
+        MachineInstr *Cand = Instrs[i - 4];
+        if (Cand->getOpcode() == X86::MOV32rm &&
+            Cand->getOperand(0).getReg() == X86::ECX &&
+            Cand->getOperand(1).isReg() &&
+            Cand->getOperand(1).getReg() == X86::ECX)
+          InfoMI = Cand;
+      }
+
       // Look at what follows the SETCCr.
       MachineInstr *AfterSetcc =
           (i + 1 < Instrs.size()) ? Instrs[i + 1] : nullptr;
 
       // Pattern matched. Apply register swap.
       DebugLoc DL = SetccMI->getDebugLoc();
+
+      // 0. Info load: ECX -> EAX (if present)
+      // Changes: mov ecx,[ecx+N] -> mov eax,[ecx+N]
+      if (InfoMI) {
+        InfoMI->getOperand(0).setReg(X86::EAX);
+        // Also update the field load's base from ECX to EAX
+        // (since info ptr is now in EAX, not ECX)
+        if (FieldMI->getOperand(1).isReg() &&
+            FieldMI->getOperand(1).getReg() == X86::ECX)
+          FieldMI->getOperand(1).setReg(X86::EAX);
+      }
 
       // 1. Field load: ECX -> EDX
       FieldMI->getOperand(0).setReg(X86::EDX);

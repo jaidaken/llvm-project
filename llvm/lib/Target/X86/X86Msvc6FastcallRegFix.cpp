@@ -188,8 +188,15 @@ bool X86Msvc6FastcallRegFixPass::runOnMachineFunction(MachineFunction &MF) {
     }
   }
 
-  // If MSVC would use EDX as shuttle but LLVM uses ECX, swap ECX<->EDX
-  // for everything except the entry MOV and the param load from ESP.
+  // If MSVC would use EDX as shuttle but LLVM uses ECX, we need to
+  // reroute the shuttle through EDX. The pattern is:
+  //   mov ecx, [esp+N]    ; param load (keep as-is)
+  //   mov ecx, [ecx+M]    ; shuttle load - LLVM reuses ecx, MSVC uses edx
+  //   mov [eax+K], ecx    ; store - should use edx
+  //
+  // Fix: change destination of shuttle loads from ECX to EDX, and change
+  // source of stores from ECX to EDX. Don't touch the base register of
+  // the shuttle load (it should stay as ECX = param ptr).
   if (SeenParamLoad && LoadsIntoECX > 0 && LoadsIntoEDX == 0) {
     SeenParamLoad = false;
     for (MachineBasicBlock &MBB : MF) {
@@ -205,7 +212,36 @@ bool X86Msvc6FastcallRegFixPass::runOnMachineFunction(MachineFunction &MF) {
         }
         if (!SeenParamLoad)
           continue;
-        // Swap ECX<->EDX in all subsequent instructions
+
+        unsigned Opc = MI.getOpcode();
+        // For loads (MOV32rm, MOV8rm, etc.): only change the dest register
+        // (operand 0) from ECX/CL to EDX/DL. Leave the base register alone.
+        if (Opc == X86::MOV32rm || Opc == X86::MOV16rm || Opc == X86::MOV8rm ||
+            Opc == X86::MOVZX32rm8 || Opc == X86::MOVZX32rm16) {
+          MachineOperand &DstOp = MI.getOperand(0);
+          if (DstOp.isReg()) {
+            unsigned NewReg = swapRegCD(DstOp.getReg());
+            if (NewReg != DstOp.getReg()) {
+              DstOp.setReg(NewReg);
+              Changed = true;
+            }
+          }
+          continue;
+        }
+        // For stores (MOV32mr, MOV8mr, etc.): only change the source register
+        // (last operand) from ECX/CL to EDX/DL. Leave the base register alone.
+        if (Opc == X86::MOV32mr || Opc == X86::MOV16mr || Opc == X86::MOV8mr) {
+          MachineOperand &SrcOp = MI.getOperand(MI.getNumExplicitOperands() - 1);
+          if (SrcOp.isReg()) {
+            unsigned NewReg = swapRegCD(SrcOp.getReg());
+            if (NewReg != SrcOp.getReg()) {
+              SrcOp.setReg(NewReg);
+              Changed = true;
+            }
+          }
+          continue;
+        }
+        // For other instructions, do a full swap of ECX<->EDX in all operands.
         for (MachineOperand &MO : MI.operands()) {
           if (!MO.isReg())
             continue;
