@@ -57,6 +57,7 @@
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/IR/Attributes.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineOperand.h"
@@ -1551,11 +1552,20 @@ bool MachineCopyPropagation::runOnMachineFunction(MachineFunction &MF) {
   TII = MF.getSubtarget().getInstrInfo();
   MRI = &MF.getRegInfo();
 
+  // bw1-decomp: When no_copy_prop is set, forward copy propagation would
+  // replace uses of the MOV destination register with the source, changing
+  // which register appears in subsequent stores.  MSVC 6.0 used the
+  // destination (eax) but LLVM would substitute the source (ecx).
+  // Skip forward propagation for these functions only.
+  bool SkipForwardProp =
+      MF.getFunction().hasFnAttribute(Attribute::NoCopyProp);
+
   for (MachineBasicBlock &MBB : MF) {
     if (isSpillageCopyElimEnabled)
       EliminateSpillageCopies(MBB);
     BackwardCopyPropagateBlock(MBB);
-    ForwardCopyPropagateBlock(MBB);
+    if (!SkipForwardProp)
+      ForwardCopyPropagateBlock(MBB);
   }
 
   return Changed;
