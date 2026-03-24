@@ -26,6 +26,9 @@
 //      like `MOV ECX, ESI` keeps ECX as the destination.
 //   4. Removes nop MOVs (e.g., `MOV ESI, ESI`) that result from rewriting
 //      the compiler's own ECX-to-ESI save.
+//   5. Reorders thiscall call setup: moves `MOV ECX, ESI` to just before
+//      the CALL, after any PUSHes (MSVC 6.0 pushes args first, then sets
+//      up ECX).
 //
 //===----------------------------------------------------------------------===//
 
@@ -90,6 +93,34 @@ static bool isNopMov(const MachineInstr &MI) {
          MI.getOperand(0).getReg() == MI.getOperand(1).getReg();
 }
 
+/// Check if MI is a MOV that sets ECX from ESI (thiscall this-ptr setup).
+static bool isMovEcxEsi(const MachineInstr &MI) {
+  unsigned Opc = MI.getOpcode();
+  if (Opc != X86::MOV32rr && Opc != X86::MOV32rr_REV)
+    return false;
+  return MI.getNumOperands() >= 2 &&
+         MI.getOperand(0).isReg() && MI.getOperand(0).getReg() == X86::ECX &&
+         MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == X86::ESI;
+}
+
+/// Check if MI is a PUSH instruction (any variant).
+static bool isAnyPush(const MachineInstr &MI) {
+  switch (MI.getOpcode()) {
+  case X86::PUSH32r:
+  case X86::PUSH32i8:
+  case X86::PUSH32i:
+  case X86::PUSH32rmm:
+    return true;
+  default:
+    return false;
+  }
+}
+
+/// Check if MI is a CALL instruction (any variant).
+static bool isAnyCall(const MachineInstr &MI) {
+  return MI.isCall();
+}
+
 bool X86ForceThisToEsiPass::runOnMachineFunction(MachineFunction &MF) {
   const Function &Fn = MF.getFunction();
   if (!Fn.hasFnAttribute(Attribute::ForceThisEsi))
@@ -143,6 +174,40 @@ bool X86ForceThisToEsiPass::runOnMachineFunction(MachineFunction &MF) {
   for (MachineInstr *MI : NopMovs) {
     MI->eraseFromParent();
     Changed = true;
+  }
+
+  // Reorder thiscall call setup: MSVC 6.0 pushes arguments first, then
+  // sets up ECX just before the CALL. Clang puts MOV ECX before the PUSHes.
+  //
+  // Pattern: MOV ECX, ESI; PUSH...; PUSH...; CALL
+  // Target:  PUSH...; PUSH...; MOV ECX, ESI; CALL
+  for (MachineBasicBlock &MBB : MF) {
+    for (auto I = MBB.begin(), E = MBB.end(); I != E; ++I) {
+      if (!isMovEcxEsi(*I))
+        continue;
+
+      // Check if followed by one or more PUSHes and then a CALL.
+      auto MovIt = I;
+      auto Next = std::next(MovIt);
+      if (Next == E || !isAnyPush(*Next))
+        continue;
+
+      // Count PUSHes.
+      auto PushStart = Next;
+      auto PushEnd = PushStart;
+      while (PushEnd != E && isAnyPush(*PushEnd))
+        ++PushEnd;
+
+      // PushEnd should now point to a CALL.
+      if (PushEnd == E || !isAnyCall(*PushEnd))
+        continue;
+
+      // Move the MOV ECX, ESI to just before the CALL (after all PUSHes).
+      MBB.splice(PushEnd, &MBB, MovIt);
+      Changed = true;
+      // Reset I to continue scanning.
+      I = PushStart;
+    }
   }
 
   return Changed;

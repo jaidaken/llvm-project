@@ -28,39 +28,43 @@ public:
   X86ReversedOpsPass() : MachineFunctionPass(ID) {}
 
   bool runOnMachineFunction(MachineFunction &MF) override {
-    if (!MF.getFunction().hasFnAttribute(Attribute::Msvc6RegAlloc))
+    bool HasRegAlloc = MF.getFunction().hasFnAttribute(Attribute::Msvc6RegAlloc);
+    bool HasMovRev = MF.getFunction().hasFnAttribute(Attribute::MOV32rr_REV);
+    if (!HasRegAlloc && !HasMovRev)
       return false;
 
     bool Changed = false;
     for (auto &MBB : MF) {
       for (auto &MI : MBB) {
         unsigned NewOpc = 0;
-        switch (MI.getOpcode()) {
-        case X86::ADD32rr: NewOpc = X86::ADD32rr_REV; break;
-        case X86::OR32rr:  NewOpc = X86::OR32rr_REV;  break;
-        case X86::SUB32rr: NewOpc = X86::SUB32rr_REV; break;
-        case X86::CMP32rr: NewOpc = X86::CMP32rr_REV; break;
-        case X86::AND32rr: NewOpc = X86::AND32rr_REV; break;
-        case X86::XOR32rr: NewOpc = X86::XOR32rr_REV; break;
-        case X86::SBB32rr: NewOpc = X86::SBB32rr_REV; break;
-        case X86::ADC32rr: NewOpc = X86::ADC32rr_REV; break;
-        case X86::ADD8rr:  NewOpc = X86::ADD8rr_REV;  break;
-        case X86::OR8rr:   NewOpc = X86::OR8rr_REV;   break;
-        case X86::SUB8rr:  NewOpc = X86::SUB8rr_REV;  break;
-        case X86::CMP8rr:  NewOpc = X86::CMP8rr_REV;  break;
-        case X86::AND8rr:  NewOpc = X86::AND8rr_REV;  break;
-        case X86::XOR8rr:  NewOpc = X86::XOR8rr_REV;  break;
-        case X86::ADD16rr: NewOpc = X86::ADD16rr_REV; break;
-        case X86::OR16rr:  NewOpc = X86::OR16rr_REV;  break;
-        case X86::SUB16rr: NewOpc = X86::SUB16rr_REV; break;
-        case X86::CMP16rr: NewOpc = X86::CMP16rr_REV; break;
-        case X86::AND16rr: NewOpc = X86::AND16rr_REV; break;
-        case X86::XOR16rr: NewOpc = X86::XOR16rr_REV; break;
-        default: break;
+        // Arithmetic reversal gated on msvc6_regalloc attribute.
+        if (HasRegAlloc) {
+          switch (MI.getOpcode()) {
+          case X86::ADD32rr: NewOpc = X86::ADD32rr_REV; break;
+          case X86::OR32rr:  NewOpc = X86::OR32rr_REV;  break;
+          case X86::SUB32rr: NewOpc = X86::SUB32rr_REV; break;
+          case X86::CMP32rr: NewOpc = X86::CMP32rr_REV; break;
+          case X86::AND32rr: NewOpc = X86::AND32rr_REV; break;
+          case X86::XOR32rr: NewOpc = X86::XOR32rr_REV; break;
+          case X86::SBB32rr: NewOpc = X86::SBB32rr_REV; break;
+          case X86::ADC32rr: NewOpc = X86::ADC32rr_REV; break;
+          case X86::ADD8rr:  NewOpc = X86::ADD8rr_REV;  break;
+          case X86::OR8rr:   NewOpc = X86::OR8rr_REV;   break;
+          case X86::SUB8rr:  NewOpc = X86::SUB8rr_REV;  break;
+          case X86::CMP8rr:  NewOpc = X86::CMP8rr_REV;  break;
+          case X86::AND8rr:  NewOpc = X86::AND8rr_REV;  break;
+          case X86::XOR8rr:  NewOpc = X86::XOR8rr_REV;  break;
+          case X86::ADD16rr: NewOpc = X86::ADD16rr_REV; break;
+          case X86::OR16rr:  NewOpc = X86::OR16rr_REV;  break;
+          case X86::SUB16rr: NewOpc = X86::SUB16rr_REV; break;
+          case X86::CMP16rr: NewOpc = X86::CMP16rr_REV; break;
+          case X86::AND16rr: NewOpc = X86::AND16rr_REV; break;
+          case X86::XOR16rr: NewOpc = X86::XOR16rr_REV; break;
+          default: break;
+          }
         }
         // MOV32rr reversal gated on MOV32rr_REV attribute (not msvc6_regalloc)
-        if (!NewOpc && MI.getOpcode() == X86::MOV32rr &&
-            MF.getFunction().hasFnAttribute(Attribute::MOV32rr_REV))
+        if (!NewOpc && MI.getOpcode() == X86::MOV32rr && HasMovRev)
           NewOpc = X86::MOV32rr_REV;
         if (NewOpc) {
           MI.setDesc(MF.getSubtarget().getInstrInfo()->get(NewOpc));
