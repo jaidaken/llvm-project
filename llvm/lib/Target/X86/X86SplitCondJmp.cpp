@@ -70,13 +70,57 @@ bool X86SplitCondJmpPass::runOnMachineFunction(MachineFunction &MF) {
     for (auto I = MBB.begin(), E = MBB.end(); I != E;) {
       MachineInstr &MI = *I++;
 
-      // Match JCC_1 or JCC_4 (conditional jump to a distant target).
-      // At this stage in the pipeline, branches may still be JCC_1 (short
-      // form); the assembler relaxes them to JCC_4 (near form) later.
+      // --- Pattern 1: TAILJMPd_CC (conditional tail jump pseudo) ---
+      // LLVM uses this for: if (p) tailcall(p);
+      // We convert: TAILJMPd_CC target, cc -> JCC_1 skip, !cc; JMP_4 target; skip: RET
+      if (MI.getOpcode() == X86::TAILJMPd_CC) {
+        // TAILJMPd_CC operands: 0=target(global), 1=condcode(imm), 2+=regmask/implicits
+        MachineOperand &TargetOp = MI.getOperand(0);
+        MachineOperand &CondOp = MI.getOperand(1);
+        if (!CondOp.isImm())
+          continue;
+
+        X86::CondCode OrigCC =
+            static_cast<X86::CondCode>(CondOp.getImm());
+        X86::CondCode InvCC = X86::GetOppositeBranchCondition(OrigCC);
+        DebugLoc DL = MI.getDebugLoc();
+
+        // Find the fall-through block that contains the RET.
+        // The TAILJMPd_CC block should have a successor with a RET.
+        MachineBasicBlock *SkipMBB = nullptr;
+        for (auto *Succ : MBB.successors()) {
+          if (!Succ->empty() && isRetOpcode(Succ->begin()->getOpcode())) {
+            SkipMBB = Succ;
+            break;
+          }
+        }
+        if (!SkipMBB) {
+          // No existing RET block found. Create one.
+          SkipMBB = MF.CreateMachineBasicBlock();
+          MF.insert(std::next(MachineFunction::iterator(&MBB)), SkipMBB);
+          BuildMI(*SkipMBB, SkipMBB->end(), DL, TII->get(X86::RET32));
+          MBB.addSuccessor(SkipMBB);
+        }
+
+        // Build inverted short conditional jump over the JMP.
+        BuildMI(MBB, MI, DL, TII->get(X86::JCC_1))
+            .addMBB(SkipMBB)
+            .addImm(InvCC);
+
+        // Build unconditional near jump to the original target.
+        BuildMI(MBB, MI, DL, TII->get(X86::JMP_4))
+            .add(TargetOp);
+
+        // Remove the TAILJMPd_CC.
+        MI.eraseFromParent();
+        Changed = true;
+        break;
+      }
+
+      // --- Pattern 2: JCC + RET in same block ---
       if (MI.getOpcode() != X86::JCC_1 && MI.getOpcode() != X86::JCC_4)
         continue;
 
-      // The JCC must be followed by a RET in the same basic block.
       if (I == E)
         continue;
 
@@ -84,8 +128,6 @@ bool X86SplitCondJmpPass::runOnMachineFunction(MachineFunction &MF) {
       if (!isRetOpcode(NextMI.getOpcode()))
         continue;
 
-      // Extract the original condition code and target.
-      // JCC_4 format: operand 0 = MBB target, operand 1 = condition code (imm)
       MachineOperand &TargetOp = MI.getOperand(0);
       MachineOperand &CondOp = MI.getOperand(1);
       if (!CondOp.isImm())
@@ -98,43 +140,23 @@ bool X86SplitCondJmpPass::runOnMachineFunction(MachineFunction &MF) {
       MachineBasicBlock *TargetMBB = TargetOp.getMBB();
       DebugLoc DL = MI.getDebugLoc();
 
-      // We need a label for the "skip" target. The RET instruction that
-      // follows is the skip target. We create a new MBB to hold the RET
-      // so that the short Jcc can reference it as a branch target.
-      //
-      // Before: [... | JCC target | RET | ...]
-      // After:  [... | JCC_1 skip | JMP_4 target | skip: RET | ...]
-      //
-      // Split the current block: everything from the RET onward goes into
-      // a new "skip" block.
       MachineBasicBlock *SkipMBB = MF.CreateMachineBasicBlock();
       MF.insert(std::next(MachineFunction::iterator(&MBB)), SkipMBB);
-
-      // Move the RET (and anything after it, though typically nothing) to SkipMBB.
       SkipMBB->splice(SkipMBB->end(), &MBB, I, MBB.end());
 
-      // Fix up the successor list. The original MBB had TargetMBB as a
-      // successor (from the JCC). Remove it and re-add with the correct
-      // topology: MBB branches to SkipMBB (inverted Jcc) or TargetMBB (JMP).
-      // SkipMBB contains only RET and has no successors.
       MBB.removeSuccessor(TargetMBB);
       MBB.addSuccessor(SkipMBB);
       MBB.addSuccessor(TargetMBB);
 
-      // Build the inverted short conditional jump: JCC_1 skip
       BuildMI(MBB, MI, DL, TII->get(X86::JCC_1))
           .addMBB(SkipMBB)
           .addImm(InvCC);
-
-      // Build the near unconditional jump: JMP_4 target
       BuildMI(MBB, MI, DL, TII->get(X86::JMP_4))
           .addMBB(TargetMBB);
 
-      // Remove the original JCC_4.
       MI.eraseFromParent();
-
       Changed = true;
-      break; // MBB has been split; stop iterating this block.
+      break;
     }
   }
 

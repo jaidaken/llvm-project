@@ -20,11 +20,12 @@
 //
 // This pass:
 //   1. Gates on the force_this_esi attribute.
-//   2. Inserts MOV32rr ESI, ECX (or MOV32rr_REV if msvc6_regalloc is set)
-//      after any prologue pushes from forced_callee_saves.
-//   3. Rewrites all subsequent uses of ECX in the function body to ESI.
-//   4. Before thiscall CALL instructions that need ECX, the rewrite
-//      naturally produces `mov ecx, esi` (the caller sets up ECX from ESI).
+//   2. Inserts MOV32rr ESI, ECX after any prologue pushes.
+//   3. Rewrites all subsequent USE operands of ECX to ESI.
+//      DEF operands are NOT rewritten so that outgoing thiscall call setup
+//      like `MOV ECX, ESI` keeps ECX as the destination.
+//   4. Removes nop MOVs (e.g., `MOV ESI, ESI`) that result from rewriting
+//      the compiler's own ECX-to-ESI save.
 //
 //===----------------------------------------------------------------------===//
 
@@ -63,16 +64,30 @@ static bool isProloguePush(const MachineInstr &MI) {
   return MI.getOpcode() == X86::PUSH32r;
 }
 
-/// Rewrite a register operand: ECX->ESI, CX->SI, CL->SIL.
+/// Rewrite a register USE operand: ECX->ESI, CX->SI, CL->SIL.
+/// Only rewrites uses (not defs) so that outgoing thiscall call setup
+/// instructions like `MOV32rr ECX, ESI` keep ECX as the destination.
 /// Returns true if the operand was changed.
 static bool rewriteEcxToEsi(MachineOperand &MO) {
-  if (!MO.isReg())
+  if (!MO.isReg() || MO.isDef())
     return false;
   Register Reg = MO.getReg();
   if (Reg == X86::ECX) { MO.setReg(X86::ESI); return true; }
   if (Reg == X86::CX)  { MO.setReg(X86::SI);  return true; }
   if (Reg == X86::CL)  { MO.setReg(X86::SIL); return true; }
   return false;
+}
+
+/// Check if a MOV instruction is a nop (source == dest).
+static bool isNopMov(const MachineInstr &MI) {
+  unsigned Opc = MI.getOpcode();
+  if (Opc != X86::MOV32rr && Opc != X86::MOV32rr_REV &&
+      Opc != X86::MOV16rr && Opc != X86::MOV16rr_REV &&
+      Opc != X86::MOV8rr && Opc != X86::MOV8rr_REV)
+    return false;
+  return MI.getNumOperands() >= 2 &&
+         MI.getOperand(0).isReg() && MI.getOperand(1).isReg() &&
+         MI.getOperand(0).getReg() == MI.getOperand(1).getReg();
 }
 
 bool X86ForceThisToEsiPass::runOnMachineFunction(MachineFunction &MF) {
@@ -82,7 +97,6 @@ bool X86ForceThisToEsiPass::runOnMachineFunction(MachineFunction &MF) {
 
   const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();
   const X86InstrInfo *TII = STI.getInstrInfo();
-  bool UseREV = Fn.hasFnAttribute(Attribute::Msvc6RegAlloc);
 
   MachineBasicBlock &EntryMBB = MF.front();
 
@@ -93,36 +107,42 @@ bool X86ForceThisToEsiPass::runOnMachineFunction(MachineFunction &MF) {
   while (InsertPt != EntryMBB.end() && isProloguePush(*InsertPt))
     ++InsertPt;
 
-  // Insert: MOV32rr ESI, ECX (or MOV32rr_REV for msvc6_regalloc encoding).
-  unsigned MovOpc = UseREV ? X86::MOV32rr_REV : X86::MOV32rr;
+  // Insert: MOV32rr ESI, ECX. The encoding (normal vs REV) will be handled
+  // by the ReversedOps pass later if MOV32rr_REV attribute is set.
   DebugLoc DL;
-  BuildMI(EntryMBB, InsertPt, DL, TII->get(MovOpc), X86::ESI)
-      .addReg(X86::ECX);
+  MachineInstr *InsertedMov =
+      BuildMI(EntryMBB, InsertPt, DL, TII->get(X86::MOV32rr), X86::ESI)
+          .addReg(X86::ECX);
 
-  // Rewrite all uses of ECX/CX/CL to ESI/SI/SIL in the entire function,
-  // EXCEPT for the MOV we just inserted and EXCEPT for instructions that
-  // set up ECX for outgoing thiscall calls (those will naturally become
-  // `mov ecx, esi` after rewriting their source).
-  //
-  // We iterate every instruction in every block. The MOV we inserted reads
-  // ECX and defines ESI - we skip it to avoid self-corruption.
+  // Rewrite all USE operands of ECX/CX/CL to ESI/SI/SIL in the entire
+  // function, EXCEPT for the MOV we just inserted.
   bool Changed = true; // We already inserted the MOV.
 
   for (MachineBasicBlock &MBB : MF) {
     for (MachineInstr &MI : MBB) {
-      // Skip our inserted MOV (it's the only MOV32rr/MOV32rr_REV that
-      // defines ESI and reads ECX in the entry block before any other code).
-      if (&MBB == &EntryMBB &&
-          (MI.getOpcode() == X86::MOV32rr ||
-           MI.getOpcode() == X86::MOV32rr_REV) &&
-          MI.getNumOperands() >= 2 &&
-          MI.getOperand(0).isReg() && MI.getOperand(0).getReg() == X86::ESI &&
-          MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == X86::ECX)
+      // Skip the MOV we just inserted.
+      if (&MI == InsertedMov)
         continue;
 
       for (MachineOperand &MO : MI.operands())
         Changed |= rewriteEcxToEsi(MO);
     }
+  }
+
+  // Remove nop MOVs created by rewriting (e.g., compiler's own
+  // `MOV ESI, ECX` becomes `MOV ESI, ESI` after the ECX use is rewritten).
+  SmallVector<MachineInstr *, 4> NopMovs;
+  for (MachineBasicBlock &MBB : MF) {
+    for (MachineInstr &MI : MBB) {
+      if (&MI == InsertedMov)
+        continue;
+      if (isNopMov(MI))
+        NopMovs.push_back(&MI);
+    }
+  }
+  for (MachineInstr *MI : NopMovs) {
+    MI->eraseFromParent();
+    Changed = true;
   }
 
   return Changed;

@@ -3993,6 +3993,13 @@ bool X86FrameLowering::canUseAsEpilogue(const MachineBasicBlock &MBB) const {
 }
 
 bool X86FrameLowering::enableShrinkWrapping(const MachineFunction &MF) const {
+  // bw1-decomp: force_this_esi inserts MOV ESI, ECX at function entry after
+  // the prologue PUSHes. Shrink-wrapping would move the PUSH ESI into a
+  // later block, but the MOV ESI, ECX at entry clobbers the old ESI value
+  // before it's saved. Disable shrink-wrapping so PUSH ESI stays at entry.
+  if (MF.getFunction().hasFnAttribute(Attribute::ForceThisEsi))
+    return false;
+
   // If we may need to emit frameless compact unwind information, give
   // up as this is currently broken: PR25614.
   bool CompactUnwind =
