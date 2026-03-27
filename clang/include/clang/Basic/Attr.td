@@ -2174,6 +2174,13 @@ def NoInline : DeclOrStmtAttr {
   let SimpleHandler = 1;
 }
 
+def NoLoadForwarding : InheritableAttr {
+  let Spellings = [GNU<"no_load_forwarding">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def NoMips16 : InheritableAttr, TargetSpecificAttr<TargetMips32> {
   let Spellings = [GCC<"nomips16">];
   let Subjects = SubjectList<[Function], ErrorDiag>;
@@ -5399,6 +5406,13 @@ def DuplicateEcxRestore: InheritableAttr {
 def PreferRtlPushOrder: InheritableAttr {
   let Spellings = [GNU<"prefer_rtl_push_order">];
   let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def OpaqueGlobal : Attr {
+  let Spellings = [GNU<"opaque_global">];
+  let Subjects = SubjectList<[GlobalVar]>;
   let Documentation = [Undocumented];
   let SimpleHandler = 1;
 }

@@ -7024,6 +7024,9 @@ Value *llvm::simplifyLoadInst(LoadInst *LI, Value *PtrOp,
   if (LI->isVolatile())
     return nullptr;
 
+  if (LI->getFunction()->hasFnAttribute("no_load_forwarding"))
+    return nullptr;
+
   if (auto *PtrOpC = dyn_cast<Constant>(PtrOp))
     return ConstantFoldLoadFromConstPtr(PtrOpC, LI->getType(), Q.DL);
 

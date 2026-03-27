@@ -1581,6 +1581,18 @@ bool EarlyCSE::processNode(DomTreeNode *Node) {
           AvailableInvariants.insert(MemLoc, CurrentGeneration);
       }
 
+      // If the function has no_load_forwarding, skip load CSE but still
+      // track available loads for store DSE purposes.
+      if (BB->getParent()->hasFnAttribute("no_load_forwarding")) {
+        AvailableLoads.insert(MemInst.getPointerOperand(),
+                              LoadValue(&Inst, CurrentGeneration,
+                                        MemInst.getMatchingId(),
+                                        MemInst.isAtomic(),
+                                        MemInst.isLoad()));
+        LastStore = nullptr;
+        continue;
+      }
+
       // If we have an available version of this load, and if it is the right
       // generation or the load is known to be from an invariant location,
       // replace this instruction.

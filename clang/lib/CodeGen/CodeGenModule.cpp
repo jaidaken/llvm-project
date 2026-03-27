@@ -5659,6 +5659,9 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D,
   if (emitter)
     emitter->finalize(GV);
 
+  if (D->hasAttr<OpaqueGlobalAttr>())
+    GV->setExternallyInitialized(true);
+
   // If it is safe to mark the global 'constant', do so now.
   GV->setConstant((D->hasAttr<CUDAConstantAttr>() && LangOpts.CUDAIsDevice) ||
                   (!NeedsGlobalCtor && !NeedsGlobalDtor &&

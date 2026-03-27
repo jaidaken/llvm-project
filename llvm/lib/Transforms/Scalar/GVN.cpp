@@ -1910,6 +1910,9 @@ static void reportLoadElim(LoadInst *Load, Value *AvailableValue,
 /// Attempt to eliminate a load whose dependencies are
 /// non-local by performing PHI construction.
 bool GVNPass::processNonLocalLoad(LoadInst *Load) {
+  if (Load->getFunction()->hasFnAttribute("no_load_forwarding"))
+    return false;
+
   // non-local speculations are not allowed under asan.
   if (Load->getParent()->getParent()->hasFnAttribute(
           Attribute::SanitizeAddress) ||
@@ -2159,6 +2162,9 @@ bool GVNPass::processLoad(LoadInst *L) {
 
   // This code hasn't been audited for ordered or volatile memory access
   if (!L->isUnordered())
+    return false;
+
+  if (L->getFunction()->hasFnAttribute("no_load_forwarding"))
     return false;
 
   if (L->use_empty()) {
