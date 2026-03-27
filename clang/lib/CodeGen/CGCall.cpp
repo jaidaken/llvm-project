@@ -2524,6 +2524,20 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("duplicate_ecx_restore");
     if (TargetDecl->hasAttr<PreferRtlPushOrderAttr>())
       FuncAttrs.addAttribute("prefer_rtl_push_order");
+    if (TargetDecl->hasAttr<NoTailMergeAttr>())
+      FuncAttrs.addAttribute("no_tail_merge");
+    if (TargetDecl->hasAttr<CmpRevAttr>())
+      FuncAttrs.addAttribute("cmp_rev");
+    if (TargetDecl->hasAttr<DeferReturnValueAttr>())
+      FuncAttrs.addAttribute("defer_return_value");
+    if (TargetDecl->hasAttr<PreferPushImmAttr>())
+      FuncAttrs.addAttribute("prefer_push_imm");
+    if (TargetDecl->hasAttr<InterleaveAddPushAttr>())
+      FuncAttrs.addAttribute("interleave_add_push");
+    if (const auto *PTA = TargetDecl->getAttr<PreferTestAhAttr>())
+      FuncAttrs.addAttribute("prefer_test_ah", PTA->getSpec());
+    if (TargetDecl->hasAttr<DeferZeroEaxAttr>())
+      FuncAttrs.addAttribute("defer_zero_eax");
 
     if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
       AddAttributesFromFunctionProtoType(

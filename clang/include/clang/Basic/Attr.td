@@ -5410,6 +5410,48 @@ def PreferRtlPushOrder: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def NoTailMerge: InheritableAttr {
+  let Spellings = [GNU<"no_tail_merge">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def CmpRev: InheritableAttr {
+  let Spellings = [GNU<"cmp_rev">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def DeferReturnValue: InheritableAttr {
+  let Spellings = [GNU<"defer_return_value">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferTestAh: InheritableAttr {
+  let Spellings = [GNU<"prefer_test_ah">];
+  let Args = [StringArgument<"Spec">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+}
+
+def DeferZeroEax: InheritableAttr {
+  let Spellings = [GNU<"defer_zero_eax">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def InterleaveAddPush: InheritableAttr {
+  let Spellings = [GNU<"interleave_add_push">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def OpaqueGlobal : Attr {
   let Spellings = [GNU<"opaque_global">];
   let Subjects = SubjectList<[GlobalVar]>;
