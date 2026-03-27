@@ -655,6 +655,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86PreferMemoryDecPass());
   addPass(createX86PreferAddMemPass());
   addPass(createX86PreferMovImmPass());
+  addPass(createX86PreferPushImmPass());
   addPass(createX86PreferMovPushPass());
   addPass(createX86PreferRegisterPushPass());
   addPass(createX86HoistPushLoadsPass());     // after RegisterPush, before BatchPush

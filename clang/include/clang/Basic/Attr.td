@@ -5158,6 +5158,13 @@ def PreferMovImm: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def PreferPushImm: InheritableAttr {
+  let Spellings = [GNU<"prefer_push_imm">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def PreferDiv: InheritableAttr {
   let Spellings = [GNU<"prefer_div">];
   let Subjects = SubjectList<[Function]>;

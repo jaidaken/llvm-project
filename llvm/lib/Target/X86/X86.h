@@ -211,6 +211,7 @@ FunctionPass *createX86PreferTestAhPass();
 /// 0xFFFF for functions with the prefer_and_mask attribute.
 FunctionPass *createX86PreferAndMaskPass();
 FunctionPass *createX86PreferMovPushPass();
+FunctionPass *createX86PreferPushImmPass();
 FunctionPass *createX86PreferRegisterPushPass();
 FunctionPass *createX86PreferThiscallReorderPass();
 FunctionPass *createX86PreferDirectEcxLoadPass();
