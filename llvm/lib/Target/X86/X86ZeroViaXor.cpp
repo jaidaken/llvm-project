@@ -174,11 +174,19 @@ bool X86ZeroViaXorPass::runOnMachineFunction(MachineFunction &MF) {
         continue;
       }
 
-      // Select a scratch register. Prefer ECX (MSVC pattern for __fastcall
-      // where ECX held this_ptr and was moved to EAX, freeing ECX).
+      // Select a scratch register. Default: prefer ECX (MSVC pattern for
+      // __fastcall where ECX held this_ptr and was moved to EAX, freeing ECX).
       // Fall back to EDX, then EAX.
-      static const Register ScratchCandidates[] = {X86::ECX, X86::EDX,
-                                                   X86::EAX};
+      // With prefer_eax_zero: prefer EAX first (MSVC pattern after a
+      // function call where EAX is dead, e.g. Deus Ex constructor+zero).
+      static const Register DefaultOrder[] = {X86::ECX, X86::EDX,
+                                               X86::EAX};
+      static const Register EaxFirstOrder[] = {X86::EAX, X86::EDX,
+                                                X86::ECX};
+      const bool PreferEax =
+          MF.getFunction().hasFnAttribute("prefer_eax_zero");
+      ArrayRef<Register> ScratchCandidates =
+          PreferEax ? ArrayRef(EaxFirstOrder) : ArrayRef(DefaultOrder);
       Register ScratchReg;
 
       for (Register Cand : ScratchCandidates) {

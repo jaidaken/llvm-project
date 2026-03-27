@@ -3266,6 +3266,63 @@ bool X86AsmParser::parseInstruction(ParseInstructionInfo &Info, StringRef Name,
         Parser.Lex();
       }
     }
+
+    // Handle bare pseudo-prefix keywords without braces.
+    // In GCC-style inline asm, curly braces are consumed by the dialect
+    // alternative machinery ('{' -> variant start, '}' -> variant end),
+    // so {disp8}, {disp32}, {nooptimize} etc. arrive here as bare
+    // identifiers without their surrounding braces. Detect them and
+    // apply the same effect as the braced form.
+    {
+      bool BarePrefix = false;
+      if (Name == "disp8") {
+        ForcedDispEncoding = DispEncoding_Disp8;
+        BarePrefix = true;
+      } else if (Name == "disp32") {
+        ForcedDispEncoding = DispEncoding_Disp32;
+        BarePrefix = true;
+      } else if (Name == "nooptimize") {
+        ForcedNoOptimize = true;
+        BarePrefix = true;
+      } else if (Name == "rex") {
+        ForcedOpcodePrefix = OpcodePrefix_REX;
+        BarePrefix = true;
+      } else if (Name == "rex2") {
+        ForcedOpcodePrefix = OpcodePrefix_REX2;
+        BarePrefix = true;
+      } else if (Name == "vex" &&
+                 ForcedOpcodePrefix == OpcodePrefix_Default) {
+        ForcedOpcodePrefix = OpcodePrefix_VEX;
+        BarePrefix = true;
+      } else if (Name == "vex2" &&
+                 ForcedOpcodePrefix == OpcodePrefix_Default) {
+        ForcedOpcodePrefix = OpcodePrefix_VEX2;
+        BarePrefix = true;
+      } else if (Name == "vex3" &&
+                 ForcedOpcodePrefix == OpcodePrefix_Default) {
+        ForcedOpcodePrefix = OpcodePrefix_VEX3;
+        BarePrefix = true;
+      } else if (Name == "evex" &&
+                 ForcedOpcodePrefix == OpcodePrefix_Default) {
+        ForcedOpcodePrefix = OpcodePrefix_EVEX;
+        BarePrefix = true;
+      } else if (Name == "nf") {
+        ForcedNoFlag = true;
+        BarePrefix = true;
+      }
+
+      if (BarePrefix) {
+        // The next token must be the actual instruction mnemonic (or
+        // another bare prefix if multiple prefixes were chained).
+        if (getLexer().isNot(AsmToken::Identifier))
+          return Error(Parser.getTok().getLoc(),
+                       "expected instruction mnemonic after pseudo prefix");
+        Name = Parser.getTok().getString();
+        NameLoc = Parser.getTok().getLoc();
+        Parser.Lex();
+        continue;
+      }
+    }
     break;
   }
 

@@ -45,6 +45,7 @@ set(sources
   X86Msvc6PartialReturn.cpp
   X86FixupMovzxOverlap.cpp
   X86ReversedOps.cpp
+  X86CmpRev.cpp
   X86PreferAddMem.cpp
   X86PreferFcompFnstsw.cpp
   X86PreferIntegerFloatMove.cpp
@@ -55,6 +56,7 @@ set(sources
   X86SuppressFPImm.cpp
   X86OrMinusOne.cpp
   X86NoTestSeteFold.cpp
+  X86NoFloatTruncation.cpp
   X86PreferNegSbb.cpp
   X86Prefer8BitOps.cpp
   X86PreferSeteEcx.cpp
@@ -63,15 +65,26 @@ set(sources
   X86PreferAndMask.cpp
   X86PreferMovImm.cpp
   X86PreferMovPush.cpp
+  X86PreferRegisterPush.cpp
   X86PreferThiscallReorder.cpp
+  X86PreferDirectEcxLoad.cpp
+  X86PreferPushBeforeEcx.cpp
+  X86DuplicateEcxRestore.cpp
   X86PreferBatchPush.cpp
+  X86PreferSequentialParamLoad.cpp
+  X86HoistPushLoads.cpp
+  X86BatchLoadBeforeStore.cpp
+  X86Msvc6EvalOrder.cpp
   X86PreferVtableEdx.cpp
   X86PreferBranchBool.cpp
+  X86PreventSetccMerge.cpp
   X86PreferMovAndCmp.cpp
   X86MergeReturnZero.cpp
   X86CallTail.cpp
   X86SplitCondJmp.cpp
+  X86ReorderSubEsp.cpp
   X86ForceThisToEsi.cpp
+  X86ForceThisToEax.cpp
   X86SwapBufRegister.cpp
   X86SwapCmpRegisters.cpp
   X86Msvc6RegSwap.cpp
@@ -82,6 +95,7 @@ set(sources
   X86StripNopPadding.cpp
   X86PreferSignedJcc.cpp
   X86Msvc6Restructure.cpp
+  X86InterleaveStoreWithCall.cpp
   X86Msvc6Schedule.cpp
   X86ReorderStores.cpp
   X86SuppressMovzx.cpp
@@ -89,6 +103,8 @@ set(sources
   X86UnfoldCmpMem.cpp
   X86UnfoldAluMem.cpp
   X86ZeroViaXor.cpp
+  X86SplitWordStores.cpp
+  X86DecomposeImul.cpp
   X86FastISel.cpp
   X86FixupBWInsts.cpp
   X86FixupLEAs.cpp

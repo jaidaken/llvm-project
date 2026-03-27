@@ -498,6 +498,9 @@ def PreferOrMinusOne : EnumAttr<"PreferOrMinusOne", IntersectPreserve, [FnAttr]>
 /// Prevent folding (~byte >> N) & 1 into test+sete.
 def NoTestSeteFold : EnumAttr<"NoTestSeteFold", IntersectPreserve, [FnAttr]>;
 
+/// Remove fstp+fld truncation round-trips on float return (MSVC 6.0 no-truncate).
+def NoFloatTruncation : EnumAttr<"NoFloatTruncation", IntersectPreserve, [FnAttr]>;
+
 /// Generate neg+sbb+inc for boolean NOT instead of xor+test+sete.
 def PreferNegSbb : EnumAttr<"PreferNegSbb", IntersectPreserve, [FnAttr]>;
 

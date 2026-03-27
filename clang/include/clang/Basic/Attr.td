@@ -5039,6 +5039,13 @@ def NoTestSeteFold: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def NoFloatTruncation: InheritableAttr {
+  let Spellings = [GNU<"no_float_truncation">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def PreferNegSbb: InheritableAttr {
   let Spellings = [GNU<"prefer_neg_sbb">];
   let Subjects = SubjectList<[Function]>;
@@ -5088,8 +5095,22 @@ def Msvc6FastcallRegFix: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def ReorderSubEsp: InheritableAttr {
+  let Spellings = [GNU<"reorder_sub_esp">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def ForceThisEsi: InheritableAttr {
   let Spellings = [GNU<"force_this_esi">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def ForceThisEdi: InheritableAttr {
+  let Spellings = [GNU<"force_this_edi">];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
   let SimpleHandler = 1;
@@ -5214,6 +5235,62 @@ def ZeroViaXor: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def SplitWordStores: InheritableAttr {
+  let Spellings = [GNU<"split_word_stores">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def ForceThisEax: InheritableAttr {
+  let Spellings = [GNU<"force_this_eax">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferEaxZero: InheritableAttr {
+  let Spellings = [GNU<"prefer_eax_zero">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferRegisterPush: InheritableAttr {
+  let Spellings = [GNU<"prefer_register_push">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferPushBeforeEcx: InheritableAttr {
+  let Spellings = [GNU<"prefer_push_before_ecx">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def Msvc6EvalOrder: InheritableAttr {
+  let Spellings = [GNU<"msvc6_eval_order">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferCallerSavedScratch: InheritableAttr {
+  let Spellings = [GNU<"prefer_caller_saved_scratch">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def BatchLoadStore: InheritableAttr {
+  let Spellings = [GNU<"batch_load_store">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def PreferMovTest: InheritableAttr {
   let Spellings = [GNU<"prefer_mov_test">];
   let Subjects = SubjectList<[Function]>;
@@ -5228,11 +5305,25 @@ def InsertRedundantCmp: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def PreferSequentialParamLoad: InheritableAttr {
+  let Spellings = [GNU<"prefer_sequential_param_load">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def Msvc6Schedule: InheritableAttr {
   let Spellings = [GNU<"msvc6_schedule">];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
   let SimpleHandler = 1;
+}
+
+def InterleaveStoreWithCall: InheritableAttr {
+  let Spellings = [GNU<"interleave_store_with_call">];
+  let Args = [StringArgument<"Mode">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
 }
 
 def StoreOrder: InheritableAttr {
@@ -5251,6 +5342,34 @@ def Msvc6Sdtor: InheritableAttr {
 
 def SplitCondJmp: InheritableAttr {
   let Spellings = [GNU<"split_cond_jmp">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def DecomposeImul: InheritableAttr {
+  let Spellings = [GNU<"decompose_imul">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferDirectEcxLoad: InheritableAttr {
+  let Spellings = [GNU<"prefer_direct_ecx_load">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreventSetccMerge: InheritableAttr {
+  let Spellings = [GNU<"prevent_setcc_merge">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def DuplicateEcxRestore: InheritableAttr {
+  let Spellings = [GNU<"duplicate_ecx_restore">];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
   let SimpleHandler = 1;

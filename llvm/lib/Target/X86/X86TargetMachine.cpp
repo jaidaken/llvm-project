@@ -610,9 +610,14 @@ void X86PassConfig::addPreEmitPass() {
   }
   addPass(createX86CompressEVEXPass());
   // bw1-decomp passes: ordering matters.
+  // ReorderSubEsp must run first: it moves SUB ESP before callee-save pushes
+  // and ADD ESP after callee-save pops, before any other pass modifies the
+  // prologue/epilogue region.
+  addPass(createX86ReorderSubEspPass());
   // ForceThisToEsi must run before all other bw1-decomp passes: it rewrites
   // ECX->ESI throughout the function so subsequent passes see the correct regs.
   addPass(createX86ForceThisToEsiPass());
+  addPass(createX86ForceThisToEaxPass());
   // CallTail must run early: it replaces TAILJMPm (created by ExpandPseudo)
   // with CALL32m + RET before other passes modify the tail region.
   addPass(createX86CallTailPass());
@@ -628,12 +633,14 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86InterleaveS2UpdatePass());
   addPass(createX86HoistLenSubPass());
   addPass(createX86StripNopPaddingPass());
+  addPass(createX86DecomposeImulPass());
   addPass(createX86UnfoldCmpMemPass());
   addPass(createX86Msvc6RestructurePass());
   addPass(createX86PreferSignedJccPass());
   addPass(createX86PreferIntegerFloatMovePass());
   addPass(createX86PreferIntFloatForwardPass());
   addPass(createX86PreferFcompFnstswPass());
+  addPass(createX86NoFloatTruncationPass());
   addPass(createX86NoTestSeteFoldPass());
   addPass(createX86Prefer8BitOpsPass());
   addPass(createX86PreferNegSbbPass());
@@ -649,18 +656,30 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86PreferAddMemPass());
   addPass(createX86PreferMovImmPass());
   addPass(createX86PreferMovPushPass());
+  addPass(createX86PreferRegisterPushPass());
+  addPass(createX86HoistPushLoadsPass());     // after RegisterPush, before BatchPush
   addPass(createX86PreferBatchPushPass());
+  addPass(createX86PreferSequentialParamLoadPass()); // after BatchPush, reorders ESP loads ascending
+  addPass(createX86BatchLoadBeforeStorePass()); // after force_this_eax has run
+  addPass(createX86Msvc6EvalOrderPass());       // swap param loads for RHS-first eval
   addPass(createX86PreferVtableEdxPass());
   addPass(createX86Msvc6SchedulePass());
   addPass(createX86PreferBranchBoolPass());
+  addPass(createX86PreventSetccMergePass());
   addPass(createX86PreferMovAndCmpPass());
   addPass(createX86MergeReturnZeroPass());
   addPass(createX86PreferThiscallReorderPass());
+  addPass(createX86PreferDirectEcxLoadPass());
+  addPass(createX86PreferPushBeforeEcxPass());
+  addPass(createX86DuplicateEcxRestorePass());
+  addPass(createX86InterleaveStoreWithCallPass());
   addPass(createX86PreferAndMaskPass());
   addPass(createX86UnfoldAluMemPass());
   addPass(createX86ZeroViaXorPass());
+  addPass(createX86SplitWordStoresPass());
   addPass(createX86Msvc6FastcallRegFixPass());
   addPass(createX86ReversedOpsPass());
+  addPass(createX86CmpRevPass());
   addPass(createX86FixupMovzxOverlapPass());
   addPass(createX86InsertRedundantCmpPass());
   // Second run of UnfoldCmpMem: insert_redundant_cmp may insert CMP [mem], 0

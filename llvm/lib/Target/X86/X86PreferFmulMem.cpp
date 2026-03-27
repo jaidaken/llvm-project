@@ -1,4 +1,4 @@
-//===---- X86PreferFmulMem.cpp - Fold fld+fmulp into fmul [mem] -----------===//
+//===---- X86PreferFmulMem.cpp - Fold fld+fop into fop [mem] --------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,12 +6,14 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// bw1-decomp: This pass folds fld+fmulp sequences into memory-form fmul
+// bw1-decomp: This pass folds fld+fop sequences into memory-form FPU ops
 // for functions with the PreferFmulMem attribute.
 //
-// MSVC 6.0 generates "fld [a]; fmul dword ptr [b]" while LLVM generates
-// "fld [a]; fld [b]; fmulp st(1), st(0)". This pass detects the
-// LD_F32m/LD_F64m + MUL_FPrST0 pattern and folds it into MUL_F32m/MUL_F64m.
+// MSVC 6.0 generates "fmul dword ptr [mem]", "fadd dword ptr [mem]",
+// "fsubr dword ptr [mem]", etc. while LLVM generates "fld [mem]; fmulp"
+// (load then operate). This pass detects LD_F32m/LD_F64m followed by
+// MUL_FPrST0, ADD_FPrST0, SUB_FPrST0, or SUBR_FPrST0 and folds them
+// into the corresponding memory-form instruction.
 //
 // Must run after X86FloatingPointStackifierPass (in addPreEmitPass).
 //
@@ -46,12 +48,23 @@ public:
 
 char X86PreferFmulMemPass::ID = 0;
 
-/// Get the memory-form multiply opcode for a given FLD opcode.
+/// Get the memory-form opcode for a given FLD + FPU-op pair.
 /// Returns 0 if no folding is possible.
-static unsigned getMulMemOpcodeForFld(unsigned FldOpcode) {
+static unsigned getMemFormOpcode(unsigned FldOpcode, unsigned FpOpcode) {
+  // Determine the size suffix from the FLD opcode.
+  bool IsF32;
   switch (FldOpcode) {
-  case X86::LD_F32m: return X86::MUL_F32m;
-  case X86::LD_F64m: return X86::MUL_F64m;
+  case X86::LD_F32m: IsF32 = true;  break;
+  case X86::LD_F64m: IsF32 = false; break;
+  default: return 0;
+  }
+
+  // Map the FPU pop-form opcode to the corresponding memory-form opcode.
+  switch (FpOpcode) {
+  case X86::MUL_FPrST0:  return IsF32 ? X86::MUL_F32m  : X86::MUL_F64m;
+  case X86::ADD_FPrST0:  return IsF32 ? X86::ADD_F32m  : X86::ADD_F64m;
+  case X86::SUB_FPrST0:  return IsF32 ? X86::SUB_F32m  : X86::SUB_F64m;
+  case X86::SUBR_FPrST0: return IsF32 ? X86::SUBR_F32m : X86::SUBR_F64m;
   default: return 0;
   }
 }
@@ -68,31 +81,36 @@ bool X86PreferFmulMemPass::runOnMachineFunction(MachineFunction &MF) {
     for (auto I = MBB.begin(), E = MBB.end(); I != E; /*below*/) {
       MachineInstr &MI = *I;
 
-      // Look for LD_F32m or LD_F64m (fld dword/qword ptr [mem]).
-      unsigned MulMemOpc = getMulMemOpcodeForFld(MI.getOpcode());
-      if (!MulMemOpc) {
+      // Skip non-FLD instructions early.
+      unsigned FldOpc = MI.getOpcode();
+      if (FldOpc != X86::LD_F32m && FldOpc != X86::LD_F64m) {
         ++I;
         continue;
       }
 
-      // Check if the next instruction is MUL_FPrST0 (fmulp st(1), st(0)).
+      // Check if the next instruction is a foldable FPU pop-form op.
       auto NextI = std::next(I);
-      if (NextI == E || NextI->getOpcode() != X86::MUL_FPrST0) {
+      if (NextI == E) {
+        ++I;
+        continue;
+      }
+
+      unsigned MemFormOpc = getMemFormOpcode(FldOpc, NextI->getOpcode());
+      if (!MemFormOpc) {
         ++I;
         continue;
       }
 
       DebugLoc DL = MI.getDebugLoc();
 
-      // Build memory-form fmul with the same memory operands as the fld.
-      // fmul dword/qword ptr [addr] — multiplies ST(0) by memory.
-      auto MIB = BuildMI(MBB, MI, DL, TII->get(MulMemOpc));
-      // Copy memory operands from the FLD (operands 0..N are the address).
+      // Build the memory-form instruction with the same memory operands
+      // as the FLD.
+      auto MIB = BuildMI(MBB, MI, DL, TII->get(MemFormOpc));
       for (unsigned i = 0; i < MI.getNumOperands(); ++i)
         MIB.add(MI.getOperand(i));
       MIB.cloneMemRefs(MI);
 
-      // Erase both the FLD and FMULP.
+      // Erase both the FLD and the FPU pop-form instruction.
       auto EraseI = I;
       I = std::next(NextI);
       NextI->eraseFromParent();

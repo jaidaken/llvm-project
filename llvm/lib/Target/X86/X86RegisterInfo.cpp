@@ -1242,7 +1242,42 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
     }
   }
 
-
+  // deusex-decomp: Prefer caller-saved scratch registers (EAX, EDX, ECX) for
+  // virtual registers whose live range does not cross a function call within
+  // their defining basic block. This avoids unnecessary callee-saved register
+  // spills that MSVC 6.0 avoids through aggressive register reuse.
+  if (MF.getFunction().hasFnAttribute("prefer_caller_saved_scratch") &&
+      TRI.isGeneralPurposeRegisterClass(&RC) &&
+      VirtReg.isVirtual()) {
+    // Find the defining instruction and its basic block.
+    const MachineInstr *DefMI = nullptr;
+    const MachineBasicBlock *DefBB = nullptr;
+    for (auto &MO : MRI->def_operands(VirtReg)) {
+      DefMI = MO.getParent();
+      DefBB = DefMI->getParent();
+      break;
+    }
+    if (DefMI && DefBB) {
+      // Walk from def to end of block, check if a CALL appears before last use.
+      bool crossesCall = false;
+      auto It = MachineBasicBlock::const_iterator(DefMI);
+      auto End = DefBB->end();
+      for (++It; It != End; ++It) {
+        if (It->isCall()) {
+          crossesCall = true;
+          break;
+        }
+      }
+      if (!crossesCall) {
+        if (is_contained(Order, X86::EAX) && !MRI->isReserved(X86::EAX))
+          Hints.push_back(X86::EAX);
+        if (is_contained(Order, X86::EDX) && !MRI->isReserved(X86::EDX))
+          Hints.push_back(X86::EDX);
+        if (is_contained(Order, X86::ECX) && !MRI->isReserved(X86::ECX))
+          Hints.push_back(X86::ECX);
+      }
+    }
+  }
 
   // bw1-decomp: MSVC 6.0 register allocation preferences.
   // When msvc6_regalloc is set, hint the this-pointer virtual register

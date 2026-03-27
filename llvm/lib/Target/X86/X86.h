@@ -138,6 +138,10 @@ FunctionPass *createX86Msvc6FastcallRegFixPass();
 /// reversed encoding variants (e.g., ADD32rr -> ADD32rr_REV) for MSVC 6.0.
 FunctionPass *createX86ReversedOpsPass();
 
+/// Return a Machine IR pass that converts CMP32mr to CMP32rm (swapping memory
+/// and register operands) and flips following condition codes for MSVC 6.0.
+FunctionPass *createX86CmpRevPass();
+
 /// Return a Machine IR pass that folds load+op+store into memory-direct
 /// arithmetic (e.g., mov r,[m]; add r,s; mov [m],r -> add [m],s).
 FunctionPass *createX86PreferAddMemPass();
@@ -179,6 +183,10 @@ FunctionPass *createX86NoTestSeteFoldPass();
 /// for functions with the prefer_neg_sbb attribute.
 FunctionPass *createX86PreferNegSbbPass();
 
+/// Return a Machine IR pass that removes fstp+fld truncation round-trips
+/// for functions with the no_float_truncation attribute (MSVC 6.0 pattern).
+FunctionPass *createX86NoFloatTruncationPass();
+
 /// Return a Machine IR pass that converts XOR+CMP+SETcc to SUB8+NEG8+SBB+INC
 /// for functions with the prefer_8bit_ops attribute.
 FunctionPass *createX86Prefer8BitOpsPass();
@@ -199,12 +207,25 @@ FunctionPass *createX86PreferPopCleanupPass();
 /// 0xFFFF for functions with the prefer_and_mask attribute.
 FunctionPass *createX86PreferAndMaskPass();
 FunctionPass *createX86PreferMovPushPass();
+FunctionPass *createX86PreferRegisterPushPass();
 FunctionPass *createX86PreferThiscallReorderPass();
+FunctionPass *createX86PreferDirectEcxLoadPass();
+FunctionPass *createX86PreferPushBeforeEcxPass();
+FunctionPass *createX86DuplicateEcxRestorePass();
 FunctionPass *createX86PreferBatchPushPass();
+FunctionPass *createX86PreferSequentialParamLoadPass();
+FunctionPass *createX86HoistPushLoadsPass();
+FunctionPass *createX86BatchLoadBeforeStorePass();
+FunctionPass *createX86Msvc6EvalOrderPass();
 FunctionPass *createX86PreferVtableEdxPass();
 FunctionPass *createX86PreferBranchBoolPass();
+FunctionPass *createX86PreventSetccMergePass();
 FunctionPass *createX86PreferMovAndCmpPass();
 FunctionPass *createX86MergeReturnZeroPass();
+
+/// Return a Machine IR pass that decomposes IMUL with specific constants
+/// into LEA/SHL/SUB chains matching MSVC 6.0 strength reduction output.
+FunctionPass *createX86DecomposeImulPass();
 
 /// Return a Machine IR pass that converts TAILJMPm to CALL32m + RET
 /// for functions with the call_tail attribute (MSVC 6.0 call-through-vtable).
@@ -218,9 +239,18 @@ FunctionPass *createX86SplitCondJmpPass();
 /// for functions with the prefer_mov_imm attribute.
 FunctionPass *createX86PreferMovImmPass();
 
+/// Return a Machine IR pass that moves SUB ESP before callee-save pushes
+/// and ADD ESP after callee-save pops (MSVC 6.0 sub-before-push pattern).
+FunctionPass *createX86ReorderSubEspPass();
+
 /// Return a Machine IR pass that forces `this` (ECX) into ESI at function
 /// entry and rewrites all subsequent ECX uses to ESI (MSVC 6.0 pattern).
 FunctionPass *createX86ForceThisToEsiPass();
+
+/// Return a Machine IR pass that forces `this` (ECX) into EAX at function
+/// entry and rewrites all subsequent ECX uses to EAX (MSVC 6.0 pattern for
+/// small member functions without sub-calls).
+FunctionPass *createX86ForceThisToEaxPass();
 
 /// Return a Machine IR pass that swaps EBX<->ESI when the primary memory
 /// base is in EBX but MSVC 6.0 expects it in ESI.
@@ -259,6 +289,10 @@ FunctionPass *createX86PreferSignedJccPass();
 /// block layout, split prologue, and interleaved epilogue.
 FunctionPass *createX86Msvc6RestructurePass();
 
+/// Return a Machine IR pass that moves field stores from before the vtable
+/// load to between pushes and the vtable call (MSVC 6.0 interleaved pattern).
+FunctionPass *createX86InterleaveStoreWithCallPass();
+
 /// Return a Machine IR pass that reorders instructions to match MSVC 6.0's
 /// AST-order depth-first evaluation, adjusting registers simultaneously.
 FunctionPass *createX86Msvc6SchedulePass();
@@ -289,6 +323,11 @@ FunctionPass *createX86UnfoldAluMemPass();
 /// into XOR+MOV32mr for functions with the zero_via_xor attribute (MSVC 6.0
 /// pattern of zeroing a register then storing through it).
 FunctionPass *createX86ZeroViaXorPass();
+
+/// Return a Machine IR pass that splits merged 32-bit immediate stores back
+/// into two 16-bit stores for functions with the split_word_stores attribute
+/// (MSVC 6.0 emitted adjacent word stores that the compiler merged).
+FunctionPass *createX86SplitWordStoresPass();
 
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();

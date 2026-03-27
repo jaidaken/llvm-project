@@ -24,6 +24,11 @@
 // COND_NE (!= Imm): xor+cmp+setne -> dec/sub+neg+sbb+neg
 //   dec eax; neg eax; sbb eax,eax; neg eax   (when Imm==1)
 //
+// COND_B (sbb+and+inc pattern): xor+cmp+setb -> cmp+sbb+and 2+inc
+//   cmp reg,N; sbb eax,eax; and eax,2; inc eax
+//   reg<N: CF=1, sbb→-1, and 2→2, inc→3.  reg>=N: CF=0, sbb→0, and 2→0, inc→1.
+//   Maps boolean {0,1} to {1,3}.
+//
 //===----------------------------------------------------------------------===//
 
 #include "X86.h"
@@ -216,6 +221,95 @@ bool X86PreferNegSbbPass::runOnMachineFunction(MachineFunction &MF) {
         MovToErase->eraseFromParent();
       SetccI->eraseFromParent();
       TestI->eraseFromParent();
+      XorMI.eraseFromParent();
+      I = NextI;
+      Changed = true;
+    }
+
+    // Pattern D (sbb+and+inc, maps boolean to {1,3}):
+    //   XOR32rr EAX, EAX; CMP32ri/CMP32ri8 REG, N; SETCCr COND_B AL
+    //   -> CMP32ri/CMP32ri8 REG, N; SBB32rr_REV EAX, EAX; AND32ri8 EAX, 2;
+    //      INC32r EAX
+    //
+    // MSVC 6.0 uses this idiom to produce 1 (condition false) or 3
+    // (condition true) instead of the standard 0/1 boolean.
+    for (auto I = MBB.begin(), E = MBB.end(); I != E; /*incremented below*/) {
+      MachineInstr &XorMI = *I;
+
+      // Step 1: Find XOR32rr/XOR32rr_REV EAX, EAX (self-xor = zero).
+      unsigned XorOpc = XorMI.getOpcode();
+      if (XorOpc != X86::XOR32rr && XorOpc != X86::XOR32rr_REV) {
+        ++I;
+        continue;
+      }
+
+      Register XorDst = XorMI.getOperand(0).getReg();
+      Register XorSrc1 = XorMI.getOperand(1).getReg();
+      Register XorSrc2 = XorMI.getOperand(2).getReg();
+      if (XorSrc1 != XorDst || XorSrc2 != XorDst) {
+        ++I;
+        continue;
+      }
+      if (XorDst != X86::EAX) {
+        ++I;
+        continue;
+      }
+
+      // Step 2: Find CMP32ri8/CMP32ri REG, N.
+      auto CmpI = std::next(I);
+      if (CmpI == E) {
+        ++I;
+        continue;
+      }
+      if (CmpI->getOpcode() != X86::CMP32ri8 &&
+          CmpI->getOpcode() != X86::CMP32ri) {
+        ++I;
+        continue;
+      }
+
+      Register CmpReg = CmpI->getOperand(0).getReg();
+      int64_t CmpImm = CmpI->getOperand(1).getImm();
+
+      // Step 3: Find SETCCr COND_B immediately after CMP.
+      auto SetccI = std::next(CmpI);
+      if (SetccI == E || SetccI->getOpcode() != X86::SETCCr) {
+        ++I;
+        continue;
+      }
+
+      X86::CondCode CC = X86::getCondFromSETCC(*SetccI);
+      if (CC != X86::COND_B) {
+        ++I;
+        continue;
+      }
+
+      // Matched. Build replacement: CMP; SBB EAX,EAX; AND EAX,2; INC EAX
+      DebugLoc DL = XorMI.getDebugLoc();
+
+      // Keep the CMP (re-emit before the XOR position, then erase original).
+      unsigned CmpOpc = CmpI->getOpcode();
+      BuildMI(MBB, XorMI, DL, TII->get(CmpOpc))
+          .addReg(CmpReg)
+          .addImm(CmpImm);
+
+      // SBB32rr_REV EAX, EAX (0x1b encoding)
+      BuildMI(MBB, XorMI, DL, TII->get(X86::SBB32rr_REV), X86::EAX)
+          .addReg(X86::EAX, RegState::Undef)
+          .addReg(X86::EAX, RegState::Undef);
+
+      // AND32ri8 EAX, 2
+      BuildMI(MBB, XorMI, DL, TII->get(X86::AND32ri8), X86::EAX)
+          .addReg(X86::EAX)
+          .addImm(2);
+
+      // INC32r EAX
+      BuildMI(MBB, XorMI, DL, TII->get(X86::INC32r), X86::EAX)
+          .addReg(X86::EAX);
+
+      // Erase original instructions.
+      auto NextI = std::next(SetccI);
+      SetccI->eraseFromParent();
+      CmpI->eraseFromParent();
       XorMI.eraseFromParent();
       I = NextI;
       Changed = true;

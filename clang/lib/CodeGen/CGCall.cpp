@@ -2411,6 +2411,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::PreferOrMinusOne);
     if (TargetDecl->hasAttr<NoTestSeteFoldAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::NoTestSeteFold);
+    if (TargetDecl->hasAttr<NoFloatTruncationAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::NoFloatTruncation);
     if (TargetDecl->hasAttr<PreferNegSbbAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::PreferNegSbb);
     if (TargetDecl->hasAttr<PreferSeteEcxAttr>())
@@ -2427,8 +2429,12 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::Msvc6RegSwap);
     if (TargetDecl->hasAttr<Msvc6FastcallRegFixAttr>())
       FuncAttrs.addAttribute("msvc6_fastcall_regfix");
+    if (TargetDecl->hasAttr<ReorderSubEspAttr>())
+      FuncAttrs.addAttribute("reorder_sub_esp");
     if (TargetDecl->hasAttr<ForceThisEsiAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::ForceThisEsi);
+    if (TargetDecl->hasAttr<ForceThisEdiAttr>())
+      FuncAttrs.addAttribute("force_this_edi");
     if (TargetDecl->hasAttr<PreferFmulMemAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::PreferFmulMem);
     if (TargetDecl->hasAttr<PreferPopCleanupAttr>())
@@ -2445,8 +2451,12 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("no_tail_call");
     if (TargetDecl->hasAttr<CallTailAttr>())
       FuncAttrs.addAttribute("call_tail");
+    if (TargetDecl->hasAttr<PreferSequentialParamLoadAttr>())
+      FuncAttrs.addAttribute("prefer_sequential_param_load");
     if (TargetDecl->hasAttr<Msvc6ScheduleAttr>())
       FuncAttrs.addAttribute("msvc6_schedule");
+    if (const auto *ISC = TargetDecl->getAttr<InterleaveStoreWithCallAttr>())
+      FuncAttrs.addAttribute("interleave_store_with_call", ISC->getMode());
     if (const auto *SO = TargetDecl->getAttr<StoreOrderAttr>())
       FuncAttrs.addAttribute("store_order", SO->getOrder());
     if (TargetDecl->hasAttr<AllowCmpFoldAttr>())
@@ -2461,6 +2471,22 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("unfold_alu_mem");
     if (TargetDecl->hasAttr<ZeroViaXorAttr>())
       FuncAttrs.addAttribute("zero_via_xor");
+    if (TargetDecl->hasAttr<SplitWordStoresAttr>())
+      FuncAttrs.addAttribute("split_word_stores");
+    if (TargetDecl->hasAttr<PreferEaxZeroAttr>())
+      FuncAttrs.addAttribute("prefer_eax_zero");
+    if (TargetDecl->hasAttr<ForceThisEaxAttr>())
+      FuncAttrs.addAttribute("force_this_eax");
+    if (TargetDecl->hasAttr<PreferRegisterPushAttr>())
+      FuncAttrs.addAttribute("prefer_register_push");
+    if (TargetDecl->hasAttr<PreferPushBeforeEcxAttr>())
+      FuncAttrs.addAttribute("prefer_push_before_ecx");
+    if (TargetDecl->hasAttr<Msvc6EvalOrderAttr>())
+      FuncAttrs.addAttribute("msvc6_eval_order");
+    if (TargetDecl->hasAttr<PreferCallerSavedScratchAttr>())
+      FuncAttrs.addAttribute("prefer_caller_saved_scratch");
+    if (TargetDecl->hasAttr<BatchLoadStoreAttr>())
+      FuncAttrs.addAttribute("batch_load_store");
     if (TargetDecl->hasAttr<PreferMovTestAttr>())
       FuncAttrs.addAttribute("prefer_mov_test");
     if (TargetDecl->hasAttr<InsertRedundantCmpAttr>())
@@ -2484,6 +2510,14 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
     }
     if (TargetDecl->hasAttr<SplitCondJmpAttr>())
       FuncAttrs.addAttribute("split_cond_jmp");
+    if (TargetDecl->hasAttr<DecomposeImulAttr>())
+      FuncAttrs.addAttribute("decompose_imul");
+    if (TargetDecl->hasAttr<PreferDirectEcxLoadAttr>())
+      FuncAttrs.addAttribute("prefer_direct_ecx_load");
+    if (TargetDecl->hasAttr<PreventSetccMergeAttr>())
+      FuncAttrs.addAttribute("prevent_setcc_merge");
+    if (TargetDecl->hasAttr<DuplicateEcxRestoreAttr>())
+      FuncAttrs.addAttribute("duplicate_ecx_restore");
 
     if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
       AddAttributesFromFunctionProtoType(
