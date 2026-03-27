@@ -67,6 +67,7 @@ set(sources
   X86PreferMovImm.cpp
   X86PreferMovPush.cpp
   X86PreferPushImm.cpp
+  X86PreferPushFstp.cpp
   X86PreferRegisterPush.cpp
   X86PreferThiscallReorder.cpp
   X86PreferDirectEcxLoad.cpp

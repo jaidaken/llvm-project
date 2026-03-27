@@ -2439,6 +2439,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::PreferFmulMem);
     if (TargetDecl->hasAttr<PreferPopCleanupAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::PreferPopCleanup);
+    if (TargetDecl->hasAttr<PreferPushFstpAttr>())
+      FuncAttrs.addAttribute("prefer_push_fstp");
     if (TargetDecl->hasAttr<Msvc6PartialReturnAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::Msvc6PartialReturn);
     if (TargetDecl->hasAttr<PreferAndMaskAttr>())

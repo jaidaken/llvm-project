@@ -212,6 +212,7 @@ FunctionPass *createX86PreferTestAhPass();
 FunctionPass *createX86PreferAndMaskPass();
 FunctionPass *createX86PreferMovPushPass();
 FunctionPass *createX86PreferPushImmPass();
+FunctionPass *createX86PreferPushFstpPass();
 FunctionPass *createX86PreferRegisterPushPass();
 FunctionPass *createX86PreferThiscallReorderPass();
 FunctionPass *createX86PreferDirectEcxLoadPass();
