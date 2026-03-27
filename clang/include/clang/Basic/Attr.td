@@ -5452,6 +5452,13 @@ def InterleaveAddPush: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def PreferPreloadStackParam: InheritableAttr {
+  let Spellings = [GNU<"prefer_preload_stack_param">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def OpaqueGlobal : Attr {
   let Spellings = [GNU<"opaque_global">];
   let Subjects = SubjectList<[GlobalVar]>;

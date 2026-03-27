@@ -2534,6 +2534,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("prefer_push_imm");
     if (TargetDecl->hasAttr<InterleaveAddPushAttr>())
       FuncAttrs.addAttribute("interleave_add_push");
+    if (TargetDecl->hasAttr<PreferPreloadStackParamAttr>())
+      FuncAttrs.addAttribute("prefer_preload_stack_param");
     if (const auto *PTA = TargetDecl->getAttr<PreferTestAhAttr>())
       FuncAttrs.addAttribute("prefer_test_ah", PTA->getSpec());
     if (TargetDecl->hasAttr<DeferZeroEaxAttr>())
