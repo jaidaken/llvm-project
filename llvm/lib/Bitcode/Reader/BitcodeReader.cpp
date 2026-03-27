@@ -2248,6 +2248,12 @@ static Attribute::AttrKind getAttrFromCode(uint64_t Code) {
     return Attribute::CoroElideSafe;
   case bitc::ATTR_KIND_NO_EXT:
     return Attribute::NoExt;
+  case bitc::ATTR_MOV32rr_REV:
+    return Attribute::MOV32rr_REV;
+  case bitc::ATTR_XOR32rr_REV:
+    return Attribute::XOR32rr_REV;
+  case bitc::ATTR_OR32rr_REV:
+    return Attribute::OR32rr_REV;
   }
 }
 

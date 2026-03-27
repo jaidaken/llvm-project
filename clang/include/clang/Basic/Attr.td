@@ -4962,6 +4962,13 @@ def XOR32rr_REV: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def OR32rr_REV: InheritableAttr {
+  let Spellings = [GNU<"OR32rr_REV">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def NoCopyProp: InheritableAttr {
   let Spellings = [GNU<"no_copy_prop">];
   let Subjects = SubjectList<[Function]>;

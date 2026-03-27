@@ -467,9 +467,10 @@ def : MergeRule<"adjustMinLegalVectorWidth">;
 def : MergeRule<"adjustNullPointerValidAttr">;
 def : MergeRule<"setAND<MustProgressAttr>">;
 
-/// Use alternative MOV and XOR instruction opcode.
+/// Use alternative MOV, XOR, and OR instruction opcode.
 def MOV32rr_REV : EnumAttr<"MOV32rr_REV", IntersectPreserve, [FnAttr]>;
 def XOR32rr_REV : EnumAttr<"XOR32rr_REV", IntersectPreserve, [FnAttr]>;
+def OR32rr_REV : EnumAttr<"OR32rr_REV", IntersectPreserve, [FnAttr]>;
 
 /// Skip forward copy propagation (preserves MSVC 6.0 register usage after MOV).
 def NoCopyProp : EnumAttr<"NoCopyProp", IntersectPreserve, [FnAttr]>;

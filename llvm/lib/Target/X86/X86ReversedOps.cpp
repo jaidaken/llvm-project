@@ -30,7 +30,8 @@ public:
   bool runOnMachineFunction(MachineFunction &MF) override {
     bool HasRegAlloc = MF.getFunction().hasFnAttribute(Attribute::Msvc6RegAlloc);
     bool HasMovRev = MF.getFunction().hasFnAttribute(Attribute::MOV32rr_REV);
-    if (!HasRegAlloc && !HasMovRev)
+    bool HasOrRev = MF.getFunction().hasFnAttribute(Attribute::OR32rr_REV);
+    if (!HasRegAlloc && !HasMovRev && !HasOrRev)
       return false;
 
     bool Changed = false;
@@ -66,6 +67,15 @@ public:
         // MOV32rr reversal gated on MOV32rr_REV attribute (not msvc6_regalloc)
         if (!NewOpc && MI.getOpcode() == X86::MOV32rr && HasMovRev)
           NewOpc = X86::MOV32rr_REV;
+        // OR reversal gated on OR32rr_REV attribute (not msvc6_regalloc)
+        if (!NewOpc && HasOrRev) {
+          switch (MI.getOpcode()) {
+          case X86::OR8rr:   NewOpc = X86::OR8rr_REV;   break;
+          case X86::OR16rr:  NewOpc = X86::OR16rr_REV;  break;
+          case X86::OR32rr:  NewOpc = X86::OR32rr_REV;  break;
+          default: break;
+          }
+        }
         if (NewOpc) {
           MI.setDesc(MF.getSubtarget().getInstrInfo()->get(NewOpc));
           Changed = true;

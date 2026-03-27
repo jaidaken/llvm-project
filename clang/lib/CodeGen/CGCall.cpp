@@ -2393,6 +2393,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::MOV32rr_REV);
     if (TargetDecl->hasAttr<XOR32rr_REVAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::XOR32rr_REV);
+    if (TargetDecl->hasAttr<OR32rr_REVAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::OR32rr_REV);
     if (TargetDecl->hasAttr<NoCopyPropAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::NoCopyProp);
     if (TargetDecl->hasAttr<NoBoolMaskAttr>())
