@@ -156,78 +156,115 @@ bool X86InterleaveAddPushPass::processBlock(MachineBasicBlock &MBB) {
     MachineInstr &MI = *I;
     ++I; // advance early since we may splice
 
-    // Look for: PUSH32r (the second/inner push)
+    // Look for: PUSH32r (the last push in a sequence)
     if (!isPushReg(MI))
       continue;
 
-    Register PushAReg = MI.getOperand(0).getReg(); // reg being pushed second
+    Register PushAReg = MI.getOperand(0).getReg(); // reg being pushed last
 
-    // Walk backward to find the ADD/LEA right before this PUSH.
-    auto AddIt = MachineBasicBlock::iterator(MI);
-    if (AddIt == MBB.begin())
+    // Walk backward to find what's before this PUSH.
+    auto PrevIt = MachineBasicBlock::iterator(MI);
+    if (PrevIt == MBB.begin())
       continue;
-    --AddIt;
-    // Skip pseudo/debug instructions
-    while (AddIt != MBB.begin() && (AddIt->isPseudo() || AddIt->isDebugInstr()))
-      --AddIt;
+    --PrevIt;
+    while (PrevIt != MBB.begin() && (PrevIt->isPseudo() || PrevIt->isDebugInstr()))
+      --PrevIt;
 
-    MachineInstr &AddMI = *AddIt;
-    if (!isAddOrLeaImm(AddMI))
-      continue;
+    // --- Pattern 1: PUSH_reg B, ADD/LEA A, PUSH_reg A ---
+    // Clang: PUSH B, ADD A, PUSH A -> MSVC: ADD A, PUSH B, PUSH A
+    if (isAddOrLeaImm(*PrevIt)) {
+      MachineInstr &AddMI = *PrevIt;
+      Register AddDest = getAddLeaDest(AddMI);
+      if (AddDest == PushAReg) {
+        auto PushBIt = PrevIt;
+        if (PushBIt != MBB.begin()) {
+          --PushBIt;
+          while (PushBIt != MBB.begin() &&
+                 (PushBIt->isPseudo() || PushBIt->isDebugInstr()))
+            --PushBIt;
 
-    // The ADD/LEA must produce the same register that the PUSH uses.
-    Register AddDest = getAddLeaDest(AddMI);
-    if (AddDest != PushAReg)
-      continue;
-
-    // Walk backward from the ADD/LEA to find the first PUSH.
-    auto PushBIt = AddIt;
-    if (PushBIt == MBB.begin())
-      continue;
-    --PushBIt;
-    while (PushBIt != MBB.begin() &&
-           (PushBIt->isPseudo() || PushBIt->isDebugInstr()))
-      --PushBIt;
-
-    MachineInstr &PushBMI = *PushBIt;
-    if (!isPushReg(PushBMI))
-      continue;
-
-    Register PushBReg = PushBMI.getOperand(0).getReg();
-
-    // Safety: the ADD/LEA must not read or write PushBReg.
-    // If it does, moving it before PUSH B would be incorrect.
-    Register AddSrc = getAddLeaSrc(AddMI);
-    if (AddSrc == PushBReg || AddDest == PushBReg)
-      continue;
-
-    // Verify the ADD/LEA doesn't have any other register operands that
-    // conflict with PushBReg (for LEA with index, etc.)
-    bool Conflict = false;
-    for (const MachineOperand &MO : AddMI.operands()) {
-      if (MO.isReg() && MO.getReg() != X86::NoRegister) {
-        const TargetRegisterInfo *TRI = &TII->getRegisterInfo();
-        if (TRI->regsOverlap(MO.getReg(), PushBReg) &&
-            MO.getReg() != AddDest && MO.getReg() != AddSrc) {
-          Conflict = true;
-          break;
+          if (isPushReg(*PushBIt)) {
+            Register PushBReg = PushBIt->getOperand(0).getReg();
+            Register AddSrc = getAddLeaSrc(AddMI);
+            if (AddSrc != PushBReg && AddDest != PushBReg) {
+              bool Conflict = false;
+              for (const MachineOperand &MO : AddMI.operands()) {
+                if (MO.isReg() && MO.getReg() != X86::NoRegister) {
+                  const TargetRegisterInfo *TRI = &TII->getRegisterInfo();
+                  if (TRI->regsOverlap(MO.getReg(), PushBReg) &&
+                      MO.getReg() != AddDest && MO.getReg() != AddSrc) {
+                    Conflict = true;
+                    break;
+                  }
+                }
+              }
+              if (!Conflict) {
+                LLVM_DEBUG(dbgs() << "InterleaveAddPush(P1): moving "
+                    << TII->getName(AddMI.getOpcode())
+                    << " before PUSH " << printReg(PushBReg, &TII->getRegisterInfo())
+                    << " in " << MBB.getParent()->getName() << "\n");
+                MBB.splice(MachineBasicBlock::iterator(*PushBIt), &MBB,
+                           MachineBasicBlock::iterator(AddMI),
+                           std::next(MachineBasicBlock::iterator(AddMI)));
+                Changed = true;
+                continue;
+              }
+            }
+          }
         }
       }
     }
-    if (Conflict)
-      continue;
 
-    LLVM_DEBUG(dbgs() << "InterleaveAddPush: moving "
-                      << TII->getName(AddMI.getOpcode())
-                      << " before PUSH " << printReg(PushBReg, &TII->getRegisterInfo())
-                      << " in " << MBB.getParent()->getName() << "\n");
+    // --- Pattern 2: ADD/LEA A, PUSH_reg B, PUSH_imm, PUSH_reg A ---
+    // Clang: ADD A, PUSH B, PUSH imm, PUSH A
+    //     -> MSVC: PUSH B, PUSH imm, ADD A, PUSH A
+    // The ADD is before all three pushes; move it between push 2 and push 3.
+    if (isAnyPush(*PrevIt) && !isPushReg(*PrevIt)) {
+      // PrevIt is a PUSH_imm (push 2)
 
-    // Move the ADD/LEA to before PUSH B.
-    MBB.splice(MachineBasicBlock::iterator(PushBMI), &MBB,
-               MachineBasicBlock::iterator(AddMI),
-               std::next(MachineBasicBlock::iterator(AddMI)));
+      auto PushBIt = PrevIt;
+      if (PushBIt != MBB.begin()) {
+        --PushBIt;
+        while (PushBIt != MBB.begin() &&
+               (PushBIt->isPseudo() || PushBIt->isDebugInstr()))
+          --PushBIt;
 
-    Changed = true;
+        if (isPushReg(*PushBIt)) {
+          // PushBIt is PUSH_reg B (push 1)
+          Register PushBReg = PushBIt->getOperand(0).getReg();
+
+          auto AddIt = PushBIt;
+          if (AddIt != MBB.begin()) {
+            --AddIt;
+            while (AddIt != MBB.begin() &&
+                   (AddIt->isPseudo() || AddIt->isDebugInstr()))
+              --AddIt;
+
+            if (isAddOrLeaImm(*AddIt)) {
+              MachineInstr &AddMI = *AddIt;
+              Register AddDest = getAddLeaDest(AddMI);
+              Register AddSrc = getAddLeaSrc(AddMI);
+
+              if (AddDest == PushAReg &&
+                  AddSrc != PushBReg && AddDest != PushBReg) {
+                LLVM_DEBUG(dbgs() << "InterleaveAddPush(P2): moving "
+                    << TII->getName(AddMI.getOpcode())
+                    << " after PUSH_imm, before PUSH "
+                    << printReg(PushAReg, &TII->getRegisterInfo())
+                    << " in " << MBB.getParent()->getName() << "\n");
+
+                // Move ADD to just before the last PUSH (MI).
+                MBB.splice(MachineBasicBlock::iterator(MI), &MBB,
+                           MachineBasicBlock::iterator(AddMI),
+                           std::next(MachineBasicBlock::iterator(AddMI)));
+                Changed = true;
+                continue;
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   return Changed;
