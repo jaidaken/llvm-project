@@ -658,6 +658,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86PreferAddMemPass());
   addPass(createX86PreferMovImmPass());
   addPass(createX86PreferPushImmPass());
+  addPass(createX86PreferPreloadStackParamPass());
   addPass(createX86PreferMovPushPass());
   addPass(createX86PreferRegisterPushPass());
   addPass(createX86HoistPushLoadsPass());     // after RegisterPush, before BatchPush
@@ -678,6 +679,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86DuplicateEcxRestorePass());
   addPass(createX86InterleaveEcxRestorePass());
   addPass(createX86InterleaveStoreWithCallPass());
+  addPass(createX86InterleaveAddPushPass());
   addPass(createX86PreferAndMaskPass());
   addPass(createX86UnfoldAluMemPass());
   addPass(createX86ZeroViaXorPass());

@@ -67,6 +67,7 @@ set(sources
   X86PreferAndMask.cpp
   X86PreferMovImm.cpp
   X86PreferMovPush.cpp
+  X86PreferPreloadStackParam.cpp
   X86PreferPushImm.cpp
   X86PreferPushFstp.cpp
   X86PreferRegisterPush.cpp
@@ -102,6 +103,7 @@ set(sources
   X86PreferSignedJcc.cpp
   X86Msvc6Restructure.cpp
   X86InterleaveStoreWithCall.cpp
+  X86InterleaveAddPush.cpp
   X86Msvc6Schedule.cpp
   X86ReorderStores.cpp
   X86SuppressMovzx.cpp

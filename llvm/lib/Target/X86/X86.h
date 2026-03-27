@@ -216,6 +216,7 @@ FunctionPass *createX86PreferTestAhPass();
 /// 0xFFFF for functions with the prefer_and_mask attribute.
 FunctionPass *createX86PreferAndMaskPass();
 FunctionPass *createX86PreferMovPushPass();
+FunctionPass *createX86PreferPreloadStackParamPass();
 FunctionPass *createX86PreferPushImmPass();
 FunctionPass *createX86PreferPushFstpPass();
 FunctionPass *createX86PreferRegisterPushPass();
@@ -308,6 +309,11 @@ FunctionPass *createX86Msvc6RestructurePass();
 /// Return a Machine IR pass that moves field stores from before the vtable
 /// load to between pushes and the vtable call (MSVC 6.0 interleaved pattern).
 FunctionPass *createX86InterleaveStoreWithCallPass();
+
+/// Return a Machine IR pass that moves ADD/LEA instructions from between
+/// two consecutive PUSHes to before both PUSHes, matching MSVC 6.0's
+/// interleaved scheduling of arithmetic between push arguments.
+FunctionPass *createX86InterleaveAddPushPass();
 
 /// Return a Machine IR pass that reorders instructions to match MSVC 6.0's
 /// AST-order depth-first evaluation, adjusting registers simultaneously.
