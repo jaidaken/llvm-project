@@ -46,6 +46,7 @@ set(sources
   X86FixupMovzxOverlap.cpp
   X86ReversedOps.cpp
   X86CmpRev.cpp
+  X86CmpLhsReg.cpp
   X86PreferAddMem.cpp
   X86PreferFcompFnstsw.cpp
   X86PreferIntegerFloatMove.cpp
@@ -86,6 +87,7 @@ set(sources
   X86PreferVtableEdx.cpp
   X86PreferBranchBool.cpp
   X86PreventSetccMerge.cpp
+  X86MergeReturnBlocks.cpp
   X86PreferMovAndCmp.cpp
   X86MergeReturnZero.cpp
   X86PreferRtlPushOrder.cpp

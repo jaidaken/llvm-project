@@ -2530,6 +2530,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("no_tail_merge");
     if (TargetDecl->hasAttr<CmpRevAttr>())
       FuncAttrs.addAttribute("cmp_rev");
+    if (TargetDecl->hasAttr<CmpLhsRegAttr>())
+      FuncAttrs.addAttribute("cmp_lhs_reg");
     if (TargetDecl->hasAttr<DeferReturnValueAttr>())
       FuncAttrs.addAttribute("defer_return_value");
     if (TargetDecl->hasAttr<PreferPushImmAttr>())

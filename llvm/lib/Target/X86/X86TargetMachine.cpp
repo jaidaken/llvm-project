@@ -672,6 +672,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86Msvc6SchedulePass());
   addPass(createX86PreferBranchBoolPass());
   addPass(createX86PreventSetccMergePass());
+  addPass(createX86MergeReturnBlocksPass());
   addPass(createX86PreferMovAndCmpPass());
   addPass(createX86MergeReturnZeroPass());
   addPass(createX86DeferReturnValuePass());
@@ -689,6 +690,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86SplitWordStoresPass());
   addPass(createX86Msvc6FastcallRegFixPass());
   addPass(createX86ReversedOpsPass());
+  addPass(createX86CmpLhsRegPass());
   addPass(createX86CmpRevPass());
   addPass(createX86PreferTestAhPass());
   addPass(createX86FixupMovzxOverlapPass());

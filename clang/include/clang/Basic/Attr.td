@@ -5431,6 +5431,13 @@ def CmpRev: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def CmpLhsReg: InheritableAttr {
+  let Spellings = [GNU<"cmp_lhs_reg">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def DeferReturnValue: InheritableAttr {
   let Spellings = [GNU<"defer_return_value">];
   let Subjects = SubjectList<[Function]>;

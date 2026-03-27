@@ -142,6 +142,10 @@ FunctionPass *createX86ReversedOpsPass();
 /// and register operands) and flips following condition codes for MSVC 6.0.
 FunctionPass *createX86CmpRevPass();
 
+/// Return a Machine IR pass that swaps which operand of a memory-vs-memory CMP
+/// is materialized into a register, matching MSVC 6.0's LHS-first convention.
+FunctionPass *createX86CmpLhsRegPass();
+
 /// Return a Machine IR pass that folds load+op+store into memory-direct
 /// arithmetic (e.g., mov r,[m]; add r,s; mov [m],r -> add [m],s).
 FunctionPass *createX86PreferAddMemPass();
@@ -241,6 +245,7 @@ FunctionPass *createX86Msvc6EvalOrderPass();
 FunctionPass *createX86PreferVtableEdxPass();
 FunctionPass *createX86PreferBranchBoolPass();
 FunctionPass *createX86PreventSetccMergePass();
+FunctionPass *createX86MergeReturnBlocksPass();
 FunctionPass *createX86PreferMovAndCmpPass();
 FunctionPass *createX86MergeReturnZeroPass();
 FunctionPass *createX86PreferRtlPushOrderPass();
