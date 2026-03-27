@@ -111,6 +111,7 @@ set(sources
   X86ReorderStores.cpp
   X86SuppressMovzx.cpp
   X86InsertRedundantCmp.cpp
+  X86InsertDeadAddZero.cpp
   X86UnfoldCmpMem.cpp
   X86UnfoldAluMem.cpp
   X86ZeroViaXor.cpp

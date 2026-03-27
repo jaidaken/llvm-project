@@ -341,6 +341,10 @@ FunctionPass *createX86SuppressMovzxPass();
 /// DEC [mem] to reproduce MSVC 6.0's dec+cmp pattern.
 FunctionPass *createX86InsertRedundantCmpPass();
 
+/// Return a Machine IR pass that inserts dead xor+add on else branches at
+/// merge points to match MSVC 6.0's unreduced common subexpression pattern.
+FunctionPass *createX86InsertDeadAddZeroPass();
+
 /// Return a Machine IR pass that unfolds CMP [mem],imm into
 /// MOV reg,[mem] + CMP reg,imm for MSVC 6.0 bool accessor patterns.
 FunctionPass *createX86UnfoldCmpMemPass();

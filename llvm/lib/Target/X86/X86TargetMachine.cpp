@@ -693,6 +693,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86PreferTestAhPass());
   addPass(createX86FixupMovzxOverlapPass());
   addPass(createX86InsertRedundantCmpPass());
+  addPass(createX86InsertDeadAddZeroPass());
   // Second run of UnfoldCmpMem: insert_redundant_cmp may insert CMP [mem], 0
   // after DEC [mem]. The first run (line 626) already handled normal cases;
   // this run converts the newly-inserted CMPs into MOV+TEST sequences.
