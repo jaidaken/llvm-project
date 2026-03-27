@@ -755,6 +755,11 @@ public:
   void trackValueOfGlobalVariable(GlobalVariable *GV) {
     // We only track the contents of scalar globals.
     if (GV->getValueType()->isSingleValueType()) {
+      // Don't propagate the initializer of externally_initialized globals -
+      // they may be modified by code not visible to the optimizer (e.g. inline
+      // asm or external initialization). This is needed for opaque_global.
+      if (GV->isExternallyInitialized())
+        return;
       ValueLatticeElement &IV = TrackedGlobals[GV];
       IV.markConstant(GV->getInitializer());
     }
