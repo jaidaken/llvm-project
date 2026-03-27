@@ -1013,6 +1013,12 @@ bool BranchFolder::TailMergeBlocks(MachineFunction &MF) {
   if (!EnableTailMerge)
     return MadeChange;
 
+  // Skip tail merging for functions with the no_tail_merge attribute.
+  // MSVC 6.0 duplicates ret sequences at each return point; tail merging
+  // collapses them into a single shared return block, causing mismatches.
+  if (MF.getFunction().hasFnAttribute("no_tail_merge"))
+    return MadeChange;
+
   // First find blocks with no successors.
   // Block placement may create new tail merging opportunities for these blocks.
   MergePotentials.clear();
