@@ -680,6 +680,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86Msvc6FastcallRegFixPass());
   addPass(createX86ReversedOpsPass());
   addPass(createX86CmpRevPass());
+  addPass(createX86PreferTestAhPass());
   addPass(createX86FixupMovzxOverlapPass());
   addPass(createX86InsertRedundantCmpPass());
   // Second run of UnfoldCmpMem: insert_redundant_cmp may insert CMP [mem], 0

@@ -203,6 +203,10 @@ FunctionPass *createX86PreferFmulMemPass();
 /// for functions with the prefer_pop_cleanup attribute.
 FunctionPass *createX86PreferPopCleanupPass();
 
+/// Return a Machine IR pass that converts TEST8mi (test byte [mem], imm)
+/// to MOV32rm + TEST8ri AH/CH for high-byte tests (MSVC 6.0 pattern).
+FunctionPass *createX86PreferTestAhPass();
+
 /// Return a Machine IR pass that converts MOVZX32rr16 to MOV32rr + AND32ri
 /// 0xFFFF for functions with the prefer_and_mask attribute.
 FunctionPass *createX86PreferAndMaskPass();

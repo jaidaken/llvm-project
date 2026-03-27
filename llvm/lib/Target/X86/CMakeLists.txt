@@ -62,6 +62,7 @@ set(sources
   X86PreferSeteEcx.cpp
   X86PreferFmulMem.cpp
   X86PreferPopCleanup.cpp
+  X86PreferTestAh.cpp
   X86PreferAndMask.cpp
   X86PreferMovImm.cpp
   X86PreferMovPush.cpp
