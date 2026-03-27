@@ -5179,6 +5179,13 @@ def PreferDiv: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def SuppressDivStrengthReduce: InheritableAttr {
+  let Spellings = [GNU<"suppress_div_strength_reduce">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def NoTailCall: InheritableAttr {
   let Spellings = [GNU<"no_tail_call">];
   let Subjects = SubjectList<[Function]>;
@@ -5384,6 +5391,13 @@ def PreventSetccMerge: InheritableAttr {
 
 def DuplicateEcxRestore: InheritableAttr {
   let Spellings = [GNU<"duplicate_ecx_restore">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferRtlPushOrder: InheritableAttr {
+  let Spellings = [GNU<"prefer_rtl_push_order">];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
   let SimpleHandler = 1;

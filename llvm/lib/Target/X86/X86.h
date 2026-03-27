@@ -228,6 +228,10 @@ FunctionPass *createX86DuplicateEcxRestorePass();
 /// Return a Machine IR pass that sinks MOV32ri EAX, imm past a TEST/CMP + Jcc
 /// sequence into the fall-through block for functions with defer_return_value.
 FunctionPass *createX86DeferReturnValuePass();
+
+/// Return a Machine IR pass that sinks XOR32rr EAX, EAX from early in the
+/// function to just before the first EAX use for functions with defer_zero_eax.
+FunctionPass *createX86DeferZeroEaxPass();
 FunctionPass *createX86InterleaveEcxRestorePass();
 FunctionPass *createX86PreferBatchPushPass();
 FunctionPass *createX86PreferSequentialParamLoadPass();
@@ -239,6 +243,7 @@ FunctionPass *createX86PreferBranchBoolPass();
 FunctionPass *createX86PreventSetccMergePass();
 FunctionPass *createX86PreferMovAndCmpPass();
 FunctionPass *createX86MergeReturnZeroPass();
+FunctionPass *createX86PreferRtlPushOrderPass();
 
 /// Return a Machine IR pass that decomposes IMUL with specific constants
 /// into LEA/SHL/SUB chains matching MSVC 6.0 strength reduction output.

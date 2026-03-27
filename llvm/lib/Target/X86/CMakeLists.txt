@@ -75,6 +75,7 @@ set(sources
   X86PreferDirectEcxLoad.cpp
   X86PreferPushBeforeEcx.cpp
   X86DeferReturnValue.cpp
+  X86DeferZeroEax.cpp
   X86DuplicateEcxRestore.cpp
   X86InterleaveEcxRestore.cpp
   X86PreferBatchPush.cpp
@@ -87,6 +88,7 @@ set(sources
   X86PreventSetccMerge.cpp
   X86PreferMovAndCmp.cpp
   X86MergeReturnZero.cpp
+  X86PreferRtlPushOrder.cpp
   X86CallTail.cpp
   X86SplitCondJmp.cpp
   X86ReorderSubEsp.cpp

@@ -2449,6 +2449,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("prefer_mov_imm");
     if (TargetDecl->hasAttr<PreferDivAttr>())
       FuncAttrs.addAttribute("prefer_div");
+    if (TargetDecl->hasAttr<SuppressDivStrengthReduceAttr>())
+      FuncAttrs.addAttribute("suppress_div_strength_reduce");
     if (TargetDecl->hasAttr<NoTailCallAttr>())
       FuncAttrs.addAttribute("no_tail_call");
     if (TargetDecl->hasAttr<CallTailAttr>())
@@ -2520,6 +2522,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("prevent_setcc_merge");
     if (TargetDecl->hasAttr<DuplicateEcxRestoreAttr>())
       FuncAttrs.addAttribute("duplicate_ecx_restore");
+    if (TargetDecl->hasAttr<PreferRtlPushOrderAttr>())
+      FuncAttrs.addAttribute("prefer_rtl_push_order");
 
     if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
       AddAttributesFromFunctionProtoType(

@@ -60603,7 +60603,8 @@ bool X86TargetLowering::isIntDivCheap(EVT VT, AttributeList Attr) const {
   // sequence can be performed in vector form.
   bool OptSize = Attr.hasFnAttr(Attribute::MinSize);
   bool ForcedDiv = Attr.hasFnAttr("prefer_div");
-  return (OptSize || ForcedDiv) && !VT.isVector();
+  bool SuppressDivSR = Attr.hasFnAttr("suppress_div_strength_reduce");
+  return (OptSize || ForcedDiv || SuppressDivSR) && !VT.isVector();
 }
 
 void X86TargetLowering::initializeSplitCSR(MachineBasicBlock *Entry) const {
