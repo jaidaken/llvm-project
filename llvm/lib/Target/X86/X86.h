@@ -155,6 +155,11 @@ FunctionPass *createX86PreferFcompFnstswPass();
 FunctionPass *createX86PreferIntegerFloatMovePass();
 FunctionPass *createX86PreferIntFloatForwardPass();
 
+/// Return a Machine IR pass that rewrites fld+fstp float parameter forwarding
+/// to mov+mov integer moves for functions with the float_param_raw_push
+/// attribute (MSVC 6.0 treats forwarded floats as raw 32-bit values).
+FunctionPass *createX86FloatParamRawPushPass();
+
 /// Return a Machine IR pass that converts XOR32rr/XOR32rr_REV self-xor
 /// zeroing idioms to XOR8rr/XOR8rr_REV for functions with prefer_xor8.
 FunctionPass *createX86PreferXOR8Pass();
@@ -218,6 +223,11 @@ FunctionPass *createX86PreferThiscallReorderPass();
 FunctionPass *createX86PreferDirectEcxLoadPass();
 FunctionPass *createX86PreferPushBeforeEcxPass();
 FunctionPass *createX86DuplicateEcxRestorePass();
+
+/// Return a Machine IR pass that sinks MOV32ri EAX, imm past a TEST/CMP + Jcc
+/// sequence into the fall-through block for functions with defer_return_value.
+FunctionPass *createX86DeferReturnValuePass();
+FunctionPass *createX86InterleaveEcxRestorePass();
 FunctionPass *createX86PreferBatchPushPass();
 FunctionPass *createX86PreferSequentialParamLoadPass();
 FunctionPass *createX86HoistPushLoadsPass();

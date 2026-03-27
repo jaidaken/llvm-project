@@ -50,6 +50,7 @@ set(sources
   X86PreferFcompFnstsw.cpp
   X86PreferIntegerFloatMove.cpp
   X86PreferIntFloatForward.cpp
+  X86FloatParamRawPush.cpp
   X86PreferXOR8.cpp
   X86PreferIncDecByte.cpp
   X86PreferMemoryDec.cpp
@@ -72,7 +73,9 @@ set(sources
   X86PreferThiscallReorder.cpp
   X86PreferDirectEcxLoad.cpp
   X86PreferPushBeforeEcx.cpp
+  X86DeferReturnValue.cpp
   X86DuplicateEcxRestore.cpp
+  X86InterleaveEcxRestore.cpp
   X86PreferBatchPush.cpp
   X86PreferSequentialParamLoad.cpp
   X86HoistPushLoads.cpp
