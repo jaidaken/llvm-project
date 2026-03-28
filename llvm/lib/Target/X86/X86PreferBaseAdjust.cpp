@@ -146,8 +146,13 @@ bool X86PreferBaseAdjustPass::runOnMachineFunction(MachineFunction &MF) {
         continue;
       }
 
-      // Collect consecutive loads/stores from the same base register.
-      // Track the minimum displacement as the common base offset.
+      // Collect loads/stores from the same base register, skipping over
+      // interleaved instructions that don't modify the base register.
+      // This handles MSVC 6.0 struct copy patterns where loads and stores
+      // to different bases are interleaved:
+      //   mov edx, [ecx+0x14]   ; load from base ECX
+      //   mov [eax], edx        ; store to different base EAX (skip)
+      //   mov edx, [ecx+0x18]   ; load from base ECX (same group)
       struct MemOp {
         MachineInstr *MI;
         bool IsLoad;
@@ -168,14 +173,12 @@ bool X86PreferBaseAdjustPass::runOnMachineFunction(MachineFunction &MF) {
         MachineInstr &MI = *J;
 
         bool IsLoad = false;
-        bool IsStore = false;
         int64_t Disp = 0;
 
         if (isSimpleLoad32(MI, BaseReg)) {
           IsLoad = true;
           Disp = getLoadDisp(MI);
         } else if (isSimpleStore32(MI, BaseReg)) {
-          IsStore = true;
           Disp = getStoreDisp(MI);
         } else {
           // Not a matching load or store using BaseReg as base.
@@ -217,14 +220,14 @@ bool X86PreferBaseAdjustPass::runOnMachineFunction(MachineFunction &MF) {
 
       // Need at least 2 memory ops to justify the ADD.
       if (Group.size() < 2) {
-        I = J;
+        ++I;
         continue;
       }
 
       // The common base offset to subtract. Use the minimum displacement.
       int64_t BaseOffset = MinDisp;
       if (BaseOffset == 0) {
-        I = J;
+        ++I;
         continue;
       }
 
