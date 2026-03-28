@@ -235,6 +235,10 @@ static void updatePredecessorProfileMetadata(PHINode *PN, BasicBlock *BB) {
 
 PreservedAnalyses JumpThreadingPass::run(Function &F,
                                          FunctionAnalysisManager &AM) {
+  // Skip jump threading for functions with the no_branch_threading attribute.
+  // CRT guard functions need short forward branches preserved exactly.
+  if (F.hasFnAttribute("no_branch_threading"))
+    return PreservedAnalyses::all();
   auto &TTI = AM.getResult<TargetIRAnalysis>(F);
   // Jump Threading has no sense for the targets with divergent CF
   if (TTI.hasBranchDivergence(&F))

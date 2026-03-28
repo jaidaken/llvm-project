@@ -1333,6 +1333,12 @@ static void salvageDebugInfoFromEmptyBlock(const TargetInstrInfo *TII,
 bool BranchFolder::OptimizeBlock(MachineBasicBlock *MBB) {
   bool MadeChange = false;
   MachineFunction &MF = *MBB->getParent();
+
+  // Skip branch optimization for functions with the no_branch_threading
+  // attribute. CRT guard functions need short forward branches preserved.
+  if (MF.getFunction().hasFnAttribute("no_branch_threading"))
+    return false;
+
 ReoptimizeBlock:
 
   MachineFunction::iterator FallThrough = MBB->getIterator();

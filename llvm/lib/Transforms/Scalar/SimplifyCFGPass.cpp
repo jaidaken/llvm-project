@@ -373,6 +373,10 @@ void SimplifyCFGPass::printPipeline(
 
 PreservedAnalyses SimplifyCFGPass::run(Function &F,
                                        FunctionAnalysisManager &AM) {
+  // Skip CFG simplification for functions with the no_branch_threading
+  // attribute. CRT guard functions need branch structure preserved.
+  if (F.hasFnAttribute("no_branch_threading"))
+    return PreservedAnalyses::all();
   auto &TTI = AM.getResult<TargetIRAnalysis>(F);
   Options.AC = &AM.getResult<AssumptionAnalysis>(F);
   DominatorTree *DT = nullptr;
