@@ -79,6 +79,7 @@ set(sources
   X86DeferZeroEax.cpp
   X86DuplicateEcxRestore.cpp
   X86InterleaveEcxRestore.cpp
+  X86InterleavePushBeforeBranch.cpp
   X86PreferBatchPush.cpp
   X86PreferSequentialParamLoad.cpp
   X86HoistPushLoads.cpp
@@ -111,7 +112,11 @@ set(sources
   X86InterleaveAddPush.cpp
   X86Msvc6Schedule.cpp
   X86ReorderStores.cpp
+  X86PreferTest16Bit.cpp
   X86SuppressMovzx.cpp
+  X86SuppressMovzwl.cpp
+  X86FoldTestMem.cpp
+  X86PreferCmpEaxEarlyRet.cpp
   X86InsertRedundantCmp.cpp
   X86InsertDeadAddZero.cpp
   X86UnfoldCmpMem.cpp
@@ -119,6 +124,7 @@ set(sources
   X86ZeroViaXor.cpp
   X86SplitWordStores.cpp
   X86DecomposeImul.cpp
+  X86LeaChainGlobalFold.cpp
   X86FastISel.cpp
   X86FixupBWInsts.cpp
   X86FixupLEAs.cpp

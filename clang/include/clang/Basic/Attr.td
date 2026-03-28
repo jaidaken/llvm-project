@@ -5389,6 +5389,13 @@ def DecomposeImul: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def LeaChainGlobalFold: InheritableAttr {
+  let Spellings = [GNU<"lea_chain_global_fold">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def PreferDirectEcxLoad: InheritableAttr {
   let Spellings = [GNU<"prefer_direct_ecx_load">];
   let Subjects = SubjectList<[Function]>;
@@ -5468,6 +5475,27 @@ def InterleaveAddPush: InheritableAttr {
 
 def PreferPreloadStackParam: InheritableAttr {
   let Spellings = [GNU<"prefer_preload_stack_param">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def SuppressMovzwl: InheritableAttr {
+  let Spellings = [GNU<"suppress_movzwl">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def FoldTestMem: InheritableAttr {
+  let Spellings = [GNU<"fold_test_mem">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferCmpEaxEarlyRet: InheritableAttr {
+  let Spellings = [GNU<"prefer_cmp_eax_early_ret">];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
   let SimpleHandler = 1;

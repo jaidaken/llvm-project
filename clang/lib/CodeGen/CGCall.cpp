@@ -2518,6 +2518,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("split_cond_jmp");
     if (TargetDecl->hasAttr<DecomposeImulAttr>())
       FuncAttrs.addAttribute("decompose_imul");
+    if (TargetDecl->hasAttr<LeaChainGlobalFoldAttr>())
+      FuncAttrs.addAttribute("lea_chain_global_fold");
     if (TargetDecl->hasAttr<PreferDirectEcxLoadAttr>())
       FuncAttrs.addAttribute("prefer_direct_ecx_load");
     if (TargetDecl->hasAttr<PreventSetccMergeAttr>())
@@ -2544,6 +2546,12 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("prefer_test_ah", PTA->getSpec());
     if (TargetDecl->hasAttr<DeferZeroEaxAttr>())
       FuncAttrs.addAttribute("defer_zero_eax");
+    if (TargetDecl->hasAttr<SuppressMovzwlAttr>())
+      FuncAttrs.addAttribute("suppress_movzwl");
+    if (TargetDecl->hasAttr<FoldTestMemAttr>())
+      FuncAttrs.addAttribute("fold_test_mem");
+    if (TargetDecl->hasAttr<PreferCmpEaxEarlyRetAttr>())
+      FuncAttrs.addAttribute("prefer_cmp_eax_early_ret");
 
     if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
       AddAttributesFromFunctionProtoType(

@@ -634,6 +634,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86HoistLenSubPass());
   addPass(createX86StripNopPaddingPass());
   addPass(createX86DecomposeImulPass());
+  addPass(createX86LeaChainGlobalFoldPass());
   addPass(createX86UnfoldCmpMemPass());
   addPass(createX86SplitCalleeSavesPass());
   addPass(createX86Msvc6RestructurePass());
@@ -675,6 +676,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86MergeReturnBlocksPass());
   addPass(createX86PreferMovAndCmpPass());
   addPass(createX86MergeReturnZeroPass());
+  addPass(createX86PreferCmpEaxEarlyRetPass());
   addPass(createX86DeferReturnValuePass());
   addPass(createX86DeferZeroEaxPass());
   addPass(createX86PreferThiscallReorderPass());
@@ -682,6 +684,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86PreferPushBeforeEcxPass());
   addPass(createX86DuplicateEcxRestorePass());
   addPass(createX86InterleaveEcxRestorePass());
+  addPass(createX86InterleavePushBeforeBranchPass());
   addPass(createX86InterleaveStoreWithCallPass());
   addPass(createX86InterleaveAddPushPass());
   addPass(createX86PreferAndMaskPass());
@@ -700,7 +703,10 @@ void X86PassConfig::addPreEmitPass() {
   // after DEC [mem]. The first run (line 626) already handled normal cases;
   // this run converts the newly-inserted CMPs into MOV+TEST sequences.
   addPass(createX86UnfoldCmpMemPass());
+  addPass(createX86FoldTestMemPass());
+  addPass(createX86SuppressMovzwlPass());
   addPass(createX86ExpandMovzxPass());
+  addPass(createX86PreferTest16BitPass());
   addPass(createX86SuppressMovzxPass());
   addPass(createX86Msvc6PartialReturnPass());
   addPass(createX86DiscriminateMemOpsPass());

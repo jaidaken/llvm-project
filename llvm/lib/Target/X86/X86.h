@@ -237,6 +237,7 @@ FunctionPass *createX86DeferReturnValuePass();
 /// function to just before the first EAX use for functions with defer_zero_eax.
 FunctionPass *createX86DeferZeroEaxPass();
 FunctionPass *createX86InterleaveEcxRestorePass();
+FunctionPass *createX86InterleavePushBeforeBranchPass();
 FunctionPass *createX86PreferBatchPushPass();
 FunctionPass *createX86PreferSequentialParamLoadPass();
 FunctionPass *createX86HoistPushLoadsPass();
@@ -253,6 +254,10 @@ FunctionPass *createX86PreferRtlPushOrderPass();
 /// Return a Machine IR pass that decomposes IMUL with specific constants
 /// into LEA/SHL/SUB chains matching MSVC 6.0 strength reduction output.
 FunctionPass *createX86DecomposeImulPass();
+
+/// Return a Machine IR pass that folds SHL + LEA [reg+global] into
+/// LEA [reg*scale+global] matching MSVC 6.0's scaled-index LEA chain.
+FunctionPass *createX86LeaChainGlobalFoldPass();
 
 /// Return a Machine IR pass that converts TAILJMPm to CALL32m + RET
 /// for functions with the call_tail attribute (MSVC 6.0 call-through-vtable).
@@ -338,9 +343,26 @@ FunctionPass *createX86Msvc6SchedulePass();
 /// store_order function attribute.
 FunctionPass *createX86ReorderStoresPass();
 
+/// Return a Machine IR pass that converts TEST32rr to TEST16rr when
+/// the tested register was loaded via XOR32rr + MOV16rm (MSVC 6.0 pattern).
+FunctionPass *createX86PreferTest16BitPass();
+
 /// Return a Machine IR pass that removes the XOR zeroing before bare
 /// subreg loads when the upper bits are dead (MSVC 6.0 pattern).
 FunctionPass *createX86SuppressMovzxPass();
+
+/// Return a Machine IR pass that converts MOVZX32rm16 to MOV16rm (partial
+/// register load) for functions with the suppress_movzwl attribute.
+FunctionPass *createX86SuppressMovzwlPass();
+
+/// Return a Machine IR pass that folds MOVZX32rm8+TEST8ri into TEST8mi
+/// for functions with the fold_test_mem attribute.
+FunctionPass *createX86FoldTestMemPass();
+
+/// Return a Machine IR pass that rewrites mov scratch,eax; mov eax,imm;
+/// cmp scratch,imm; je into cmp eax,imm; jne for functions with the
+/// prefer_cmp_eax_early_ret attribute.
+FunctionPass *createX86PreferCmpEaxEarlyRetPass();
 
 /// Return a Machine IR pass that inserts a redundant CMP [mem], 0 after
 /// DEC [mem] to reproduce MSVC 6.0's dec+cmp pattern.

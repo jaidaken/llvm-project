@@ -22,6 +22,7 @@
 #include "X86.h"
 #include "X86InstrInfo.h"
 #include "X86Subtarget.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 using namespace llvm;
@@ -140,6 +141,14 @@ bool X86PreferBranchBoolPass::runOnMachineFunction(MachineFunction &MF) {
 
       if (CC == X86::COND_INVALID) { ++I; continue; }
 
+      // Skip any POP32r instructions between the pattern and RET
+      // (callee-save restores from forced_callee_saves).
+      SmallVector<MachineInstr *, 4> Pops;
+      while (RetI != E && RetI->getOpcode() == X86::POP32r) {
+        Pops.push_back(&*RetI);
+        RetI = std::next(RetI);
+      }
+
       // Find the RET: must be next in same block
       bool IsRet = false;
       if (RetI != E) {
@@ -179,12 +188,19 @@ bool X86PreferBranchBoolPass::runOnMachineFunction(MachineFunction &MF) {
       // Insert point is before the first instruction to remove
       MachineInstr *InsertBefore = ToRemove[0];
 
-      // Build in current block: JCC FalseMBB, inverted_CC; MOV32ri EAX, 1; RET
+      // Build in current block: JCC FalseMBB, inverted_CC; MOV32ri EAX, 1; [POPs]; RET
       BuildMI(MBB, *InsertBefore, DL, TII->get(X86::JCC_1))
           .addMBB(FalseMBB)
           .addImm(InvCC);
       BuildMI(MBB, *InsertBefore, DL, TII->get(X86::MOV32ri), X86::EAX)
           .addImm(1);
+      // Clone the POPs for the true path (callee-save restores)
+      for (MachineInstr *PopMI : Pops) {
+        auto Clone = BuildMI(MBB, *InsertBefore, DL,
+                              TII->get(PopMI->getOpcode()));
+        for (const auto &MO : PopMI->operands())
+          Clone.add(MO);
+      }
       // Clone the RET for the true path
       {
         auto TrueRet = BuildMI(MBB, *InsertBefore, DL, TII->get(RetI->getOpcode()));
@@ -197,6 +213,13 @@ bool X86PreferBranchBoolPass::runOnMachineFunction(MachineFunction &MF) {
               TII->get(X86::XOR32rr_REV), X86::EAX)
           .addReg(X86::EAX, RegState::Undef)
           .addReg(X86::EAX, RegState::Undef);
+      // Clone the POPs for the false path (callee-save restores)
+      for (MachineInstr *PopMI : Pops) {
+        auto Clone = BuildMI(*FalseMBB, FalseMBB->end(), DL,
+                              TII->get(PopMI->getOpcode()));
+        for (const auto &MO : PopMI->operands())
+          Clone.add(MO);
+      }
 
       // Transfer successors and add false block
       FalseMBB->transferSuccessorsAndUpdatePHIs(&MBB);
@@ -214,7 +237,9 @@ bool X86PreferBranchBoolPass::runOnMachineFunction(MachineFunction &MF) {
           ClonedRet.add(MO);
       }
 
-      // Remove old instructions
+      // Remove old instructions (POPs, then the pattern instructions)
+      for (MachineInstr *PopMI : Pops)
+        PopMI->eraseFromParent();
       for (MachineInstr *MI : ToRemove)
         MI->eraseFromParent();
       I = MBB.begin(); // restart scan
