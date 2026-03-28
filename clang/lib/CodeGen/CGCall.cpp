@@ -2572,6 +2572,10 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("prefer_base_adjust");
     if (const auto *PBPL = TargetDecl->getAttr<PreferByteParamLoadAttr>())
       FuncAttrs.addAttribute("prefer_byte_param_load", PBPL->getOffsets());
+    if (const auto *IDAZ = TargetDecl->getAttr<InsertDeadAddZeroAttr>())
+      FuncAttrs.addAttribute("insert_dead_add_zero", IDAZ->getRegName());
+    if (const auto *SCS = TargetDecl->getAttr<SplitCalleeSavesAttr>())
+      FuncAttrs.addAttribute("split_callee_saves", SCS->getSpec());
 
     if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
       AddAttributesFromFunctionProtoType(

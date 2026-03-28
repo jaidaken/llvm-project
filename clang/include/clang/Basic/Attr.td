@@ -5564,6 +5564,20 @@ def PreferByteParamLoad: InheritableAttr {
   let Documentation = [Undocumented];
 }
 
+def InsertDeadAddZero: InheritableAttr {
+  let Spellings = [GNU<"insert_dead_add_zero">];
+  let Args = [StringArgument<"RegName">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+}
+
+def SplitCalleeSaves: InheritableAttr {
+  let Spellings = [GNU<"split_callee_saves">];
+  let Args = [StringArgument<"Spec">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+}
+
 def OpaqueGlobal : Attr {
   let Spellings = [GNU<"opaque_global">];
   let Subjects = SubjectList<[GlobalVar]>;

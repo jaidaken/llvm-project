@@ -2961,6 +2961,27 @@ static void handlePreferTestAhAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   D->addAttr(::new (S.Context) PreferTestAhAttr(S.Context, AL, Str));
 }
 
+static void handleInsertDeadAddZeroAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  StringRef Str;
+  if (!S.checkStringLiteralArgumentAttr(AL, 0, Str))
+    return;
+  D->addAttr(::new (S.Context) InsertDeadAddZeroAttr(S.Context, AL, Str));
+}
+
+static void handlePreferByteParamLoadAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  StringRef Str;
+  if (!S.checkStringLiteralArgumentAttr(AL, 0, Str))
+    return;
+  D->addAttr(::new (S.Context) PreferByteParamLoadAttr(S.Context, AL, Str));
+}
+
+static void handleSplitCalleeSavesAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  StringRef Str;
+  if (!S.checkStringLiteralArgumentAttr(AL, 0, Str))
+    return;
+  D->addAttr(::new (S.Context) SplitCalleeSavesAttr(S.Context, AL, Str));
+}
+
 static void handleCodeModelAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   StringRef Str;
   SourceLocation LiteralLoc;
@@ -7008,6 +7029,15 @@ ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D, const ParsedAttr &AL,
     break;
   case ParsedAttr::AT_PreferTestAh:
     handlePreferTestAhAttr(S, D, AL);
+    break;
+  case ParsedAttr::AT_InsertDeadAddZero:
+    handleInsertDeadAddZeroAttr(S, D, AL);
+    break;
+  case ParsedAttr::AT_PreferByteParamLoad:
+    handlePreferByteParamLoadAttr(S, D, AL);
+    break;
+  case ParsedAttr::AT_SplitCalleeSaves:
+    handleSplitCalleeSavesAttr(S, D, AL);
     break;
   case ParsedAttr::AT_CodeModel:
     handleCodeModelAttr(S, D, AL);
