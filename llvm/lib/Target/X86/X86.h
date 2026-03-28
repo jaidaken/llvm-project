@@ -301,6 +301,11 @@ FunctionPass *createX86SwapCmpRegistersPass();
 /// EDX field load + ECX sete for MSVC 6.0 bitfield accessor functions.
 FunctionPass *createX86Msvc6RegSwapPass();
 
+/// Return a Machine IR pass that swaps the first memory load's destination
+/// register with EAX throughout the function, matching MSVC 6.0's preference
+/// for loading flags into EAX.
+FunctionPass *createX86PreferFirstLoadEaxPass();
+
 /// Return a Machine IR pass that rewrites add/cmp/ja loop latches to
 /// dec ebp/jne with trip count precomputation.
 FunctionPass *createX86PreferTripCountLoopPass();
@@ -396,6 +401,11 @@ FunctionPass *createX86UnfoldCmpMemPass();
 /// (e.g., ADD32rm) into MOV+register-register ALU (e.g., MOV32rm+ADD32rr)
 /// for functions with the unfold_alu_mem attribute (MSVC 6.0 pattern).
 FunctionPass *createX86UnfoldAluMemPass();
+
+/// Return a Machine IR pass that materializes repeated immediate values in
+/// EAX before storing (XOR for zero, MOV32ri for non-zero) for functions with
+/// the prefer_register_store attribute (MSVC 6.0 register store pattern).
+FunctionPass *createX86PreferRegisterStorePass();
 
 /// Return a Machine IR pass that converts immediate-zero stores (MOV32mi 0)
 /// into XOR+MOV32mr for functions with the zero_via_xor attribute (MSVC 6.0

@@ -2483,6 +2483,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("unfold_alu_mem");
     if (TargetDecl->hasAttr<PreventAddLoadFoldAttr>())
       FuncAttrs.addAttribute("prevent_add_load_fold");
+    if (TargetDecl->hasAttr<PreferRegisterStoreAttr>())
+      FuncAttrs.addAttribute("prefer_register_store");
     if (TargetDecl->hasAttr<ZeroViaXorAttr>())
       FuncAttrs.addAttribute("zero_via_xor");
     if (TargetDecl->hasAttr<SplitWordStoresAttr>())
@@ -2562,6 +2564,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("prefer_test_ah_reg");
     if (TargetDecl->hasAttr<DeferZeroEaxAttr>())
       FuncAttrs.addAttribute("defer_zero_eax");
+    if (TargetDecl->hasAttr<PreferFirstLoadEaxAttr>())
+      FuncAttrs.addAttribute("prefer_first_load_eax");
     if (TargetDecl->hasAttr<SuppressMovzwlAttr>())
       FuncAttrs.addAttribute("suppress_movzwl");
     if (TargetDecl->hasAttr<FoldTestMemAttr>())

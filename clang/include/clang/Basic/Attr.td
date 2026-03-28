@@ -5298,6 +5298,13 @@ def PreventAddLoadFold: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def PreferRegisterStore: InheritableAttr {
+  let Spellings = [GNU<"prefer_register_store">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def ZeroViaXor: InheritableAttr {
   let Spellings = [GNU<"zero_via_xor">];
   let Subjects = SubjectList<[Function]>;
@@ -5581,6 +5588,13 @@ def SplitCalleeSaves: InheritableAttr {
 def OpaqueGlobal : Attr {
   let Spellings = [GNU<"opaque_global">];
   let Subjects = SubjectList<[GlobalVar]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferFirstLoadEax: InheritableAttr {
+  let Spellings = [GNU<"prefer_first_load_eax">];
+  let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
   let SimpleHandler = 1;
 }
