@@ -347,6 +347,10 @@ FunctionPass *createX86Msvc6SchedulePass();
 /// store_order function attribute.
 FunctionPass *createX86ReorderStoresPass();
 
+/// Return a Machine IR pass that converts absolute-offset struct loads
+/// to base-adjust + small-offset loads (MSVC 6.0 struct copy pattern).
+FunctionPass *createX86PreferBaseAdjustPass();
+
 /// Return a Machine IR pass that converts TEST32rr to TEST16rr when
 /// the tested register was loaded via XOR32rr + MOV16rm (MSVC 6.0 pattern).
 FunctionPass *createX86PreferTest16BitPass();

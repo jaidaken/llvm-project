@@ -47,6 +47,7 @@ set(sources
   X86ReversedOps.cpp
   X86CmpRev.cpp
   X86CmpLhsReg.cpp
+  X86PreferBaseAdjust.cpp
   X86PreferAddMem.cpp
   X86PreferFcompFnstsw.cpp
   X86PreferIntegerFloatMove.cpp
