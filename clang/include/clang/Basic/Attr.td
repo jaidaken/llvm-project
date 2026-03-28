@@ -5137,6 +5137,13 @@ def ForcedCalleeSaves: InheritableAttr {
   let Documentation = [Undocumented];
 }
 
+def DelayedCalleeSave: InheritableAttr {
+  let Spellings = [GNU<"delayed_callee_save">];
+  let Args = [StringArgument<"Spec">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+}
+
 def PreferFmulMem: InheritableAttr {
   let Spellings = [GNU<"prefer_fmul_mem">];
   let Subjects = SubjectList<[Function]>;

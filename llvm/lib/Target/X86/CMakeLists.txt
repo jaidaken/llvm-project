@@ -107,6 +107,7 @@ set(sources
   X86StripNopPadding.cpp
   X86PreferSignedJcc.cpp
   X86SplitCalleeSaves.cpp
+  X86DelayedCalleeSave.cpp
   X86Msvc6Restructure.cpp
   X86InterleaveStoreWithCall.cpp
   X86InterleaveAddPush.cpp

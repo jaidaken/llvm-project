@@ -28,10 +28,11 @@
 // rewrites:
 //   MOV32rr scratch, EAX; MOV32ri EAX, imm; CMP32ri8 scratch, imm; JCC_1 je
 // into:
-//   CMP32ri8 EAX, imm; JCC_1 jne (inverted, swapped targets)
+//   CMP32ri8 EAX, imm; JCC_1 jne (inverted, targeting old fall-through)
 //
-// The MOV32ri EAX is sunk into the fall-through block (where the branch
-// would have gone).
+// The MOV32ri EAX is sunk into a new intermediate block placed between MBB
+// and FallThrough, so the JNE skips over it. The old branch target (return
+// block) becomes reachable via fall-through from the intermediate block.
 //
 //===----------------------------------------------------------------------===//
 
@@ -87,7 +88,14 @@ bool X86PreferCmpEaxEarlyRetPass::runOnMachineFunction(MachineFunction &MF) {
   const TargetRegisterInfo *TRI = STI.getRegisterInfo();
   bool Changed = false;
 
-  for (MachineBasicBlock &MBB : MF) {
+  // Process blocks in a snapshot to avoid iterator invalidation from
+  // block creation/movement.
+  SmallVector<MachineBasicBlock *, 16> Blocks;
+  for (MachineBasicBlock &MBB : MF)
+    Blocks.push_back(&MBB);
+
+  for (MachineBasicBlock *MBBPtr : Blocks) {
+    MachineBasicBlock &MBB = *MBBPtr;
     for (auto I = MBB.begin(), E = MBB.end(); I != E;) {
       MachineInstr &MovRR = *I;
 
@@ -167,6 +175,12 @@ bool X86PreferCmpEaxEarlyRetPass::runOnMachineFunction(MachineFunction &MF) {
         continue;
       }
 
+      // Guard: BranchTarget must not be the same as FallThrough or MBB.
+      if (BranchTarget == FallThrough || BranchTarget == &MBB) {
+        ++I;
+        continue;
+      }
+
       LLVM_DEBUG(dbgs() << "PreferCmpEaxEarlyRet: rewriting pattern in "
                         << MF.getName() << "\n");
 
@@ -178,17 +192,11 @@ bool X86PreferCmpEaxEarlyRetPass::runOnMachineFunction(MachineFunction &MF) {
           .addImm(CmpImm);
 
       // Build: JCC with inverted condition, targeting the old fall-through.
-      // The old branch target (shared return block) becomes the new
-      // fall-through, and the old fall-through becomes the new branch target.
+      // After block rearrangement, BranchTarget will be between MBB and
+      // FallThrough, so JNE FallThrough skips over BranchTarget.
       BuildMI(MBB, MovRR, DL, TII->get(JccOpc))
           .addMBB(FallThrough)
           .addImm(InvCC);
-
-      // Sink the MOV32ri EAX, ReturnImm into the old branch target
-      // (the shared return block that is now the fall-through).
-      BuildMI(*BranchTarget, BranchTarget->begin(), DL,
-              TII->get(X86::MOV32ri), X86::EAX)
-          .addImm(ReturnImm);
 
       // Remove the four original instructions.
       auto NextI = std::next(JccIt);
@@ -197,12 +205,33 @@ bool X86PreferCmpEaxEarlyRetPass::runOnMachineFunction(MachineFunction &MF) {
       MovImm.eraseFromParent();
       MovRR.eraseFromParent();
 
-      // Update block successors: swap targets.
-      // The old branch target is now the fall-through, and the old
-      // fall-through is now the branch target.
-      // We need to update MBB's successor list to reflect the new layout.
-      // The successors should still be the same two blocks - just the
-      // branch condition changed. The successor list stays the same.
+      // Sink MOV32ri EAX, ReturnImm into BranchTarget.
+      // If BranchTarget has multiple predecessors, create a new intermediate
+      // block to avoid polluting the shared return block.
+      if (BranchTarget->pred_size() > 1) {
+        // Create a new block for the MOV32ri, placed after MBB.
+        MachineBasicBlock *NewMBB = MF.CreateMachineBasicBlock();
+        MF.insert(std::next(MachineFunction::iterator(&MBB)), NewMBB);
+
+        BuildMI(*NewMBB, NewMBB->end(), DL, TII->get(X86::MOV32ri), X86::EAX)
+            .addImm(ReturnImm);
+
+        // NewMBB falls through to BranchTarget.
+        NewMBB->addSuccessor(BranchTarget);
+
+        // Update MBB's successor list: replace BranchTarget with NewMBB.
+        MBB.replaceSuccessor(BranchTarget, NewMBB);
+      } else {
+        // BranchTarget has only one predecessor (MBB). Safe to insert
+        // directly and move it after MBB.
+        BuildMI(*BranchTarget, BranchTarget->begin(), DL,
+                TII->get(X86::MOV32ri), X86::EAX)
+            .addImm(ReturnImm);
+
+        // Move BranchTarget to be the layout successor of MBB.
+        if (BranchTarget->getPrevNode() != &MBB)
+          BranchTarget->moveAfter(&MBB);
+      }
 
       I = NextI;
       Changed = true;

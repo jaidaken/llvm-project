@@ -637,6 +637,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86LeaChainGlobalFoldPass());
   addPass(createX86UnfoldCmpMemPass());
   addPass(createX86SplitCalleeSavesPass());
+  addPass(createX86DelayedCalleeSavePass());
   addPass(createX86Msvc6RestructurePass());
   addPass(createX86PreferSignedJccPass());
   addPass(createX86PreferIntegerFloatMovePass());

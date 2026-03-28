@@ -321,6 +321,10 @@ FunctionPass *createX86PreferSignedJccPass();
 /// and conditional groups, matching MSVC 6.0's asymmetric prologue pattern.
 FunctionPass *createX86SplitCalleeSavesPass();
 
+/// Return a Machine IR pass that delays a callee-save push from the prologue
+/// to between the first TEST/CMP and its Jcc in the entry block.
+FunctionPass *createX86DelayedCalleeSavePass();
+
 /// Return a Machine IR pass that restructures functions to match MSVC 6.0
 /// block layout, split prologue, and interleaved epilogue.
 FunctionPass *createX86Msvc6RestructurePass();

@@ -2503,6 +2503,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("prefer_8bit_ops");
     if (const auto *FCS = TargetDecl->getAttr<ForcedCalleeSavesAttr>())
       FuncAttrs.addAttribute("forced_callee_saves", FCS->getRegisters());
+    if (const auto *DCS = TargetDecl->getAttr<DelayedCalleeSaveAttr>())
+      FuncAttrs.addAttribute("delayed_callee_save", DCS->getSpec());
     if (const auto *TB = TargetDecl->getAttr<TrailingBytesAttr>())
       FuncAttrs.addAttribute("trailing_bytes", TB->getBytes());
     if (const auto *TA = TargetDecl->getAttr<TrailingAsmAttr>())
@@ -2522,8 +2524,10 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("lea_chain_global_fold");
     if (TargetDecl->hasAttr<PreferDirectEcxLoadAttr>())
       FuncAttrs.addAttribute("prefer_direct_ecx_load");
-    if (TargetDecl->hasAttr<PreventSetccMergeAttr>())
+    if (TargetDecl->hasAttr<PreventSetccMergeAttr>()) {
       FuncAttrs.addAttribute("prevent_setcc_merge");
+      FuncAttrs.addAttribute("merge_return_blocks");
+    }
     if (TargetDecl->hasAttr<DuplicateEcxRestoreAttr>())
       FuncAttrs.addAttribute("duplicate_ecx_restore");
     if (TargetDecl->hasAttr<PreferRtlPushOrderAttr>())
