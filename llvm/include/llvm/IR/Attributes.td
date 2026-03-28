@@ -532,3 +532,6 @@ def PreferPopCleanup : EnumAttr<"PreferPopCleanup", IntersectPreserve, [FnAttr]>
 
 /// Use partial register (AL/AX) for byte/word returns and small constants.
 def Msvc6PartialReturn : EnumAttr<"Msvc6PartialReturn", IntersectPreserve, [FnAttr]>;
+
+/// Swap TEST register operands to match MSVC 6.0 ModR/M encoding order.
+def TestRev : EnumAttr<"TestRev", IntersectPreserve, [FnAttr]>;

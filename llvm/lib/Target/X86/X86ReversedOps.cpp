@@ -31,7 +31,8 @@ public:
     bool HasRegAlloc = MF.getFunction().hasFnAttribute(Attribute::Msvc6RegAlloc);
     bool HasMovRev = MF.getFunction().hasFnAttribute(Attribute::MOV32rr_REV);
     bool HasOrRev = MF.getFunction().hasFnAttribute(Attribute::OR32rr_REV);
-    if (!HasRegAlloc && !HasMovRev && !HasOrRev)
+    bool HasTestRev = MF.getFunction().hasFnAttribute(Attribute::TestRev);
+    if (!HasRegAlloc && !HasMovRev && !HasOrRev && !HasTestRev)
       return false;
 
     bool Changed = false;
@@ -79,6 +80,23 @@ public:
         if (NewOpc) {
           MI.setDesc(MF.getSubtarget().getInstrInfo()->get(NewOpc));
           Changed = true;
+        }
+        // TEST operand swap gated on TestRev attribute.
+        // TEST is commutative so swapping operands only changes the ModR/M
+        // encoding, not the flags result.  MSVC 6.0 uses a different operand
+        // order than Clang (e.g. 84 C8 vs 84 C1 for test al, cl).
+        if (HasTestRev) {
+          unsigned Opc = MI.getOpcode();
+          if (Opc == X86::TEST8rr || Opc == X86::TEST16rr ||
+              Opc == X86::TEST32rr) {
+            Register Reg0 = MI.getOperand(0).getReg();
+            Register Reg1 = MI.getOperand(1).getReg();
+            if (Reg0 != Reg1) {
+              MI.getOperand(0).setReg(Reg1);
+              MI.getOperand(1).setReg(Reg0);
+              Changed = true;
+            }
+          }
         }
       }
     }
