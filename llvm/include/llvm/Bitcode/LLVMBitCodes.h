@@ -790,6 +790,9 @@ enum AttributeKindCodes {
   ATTR_MOV32rr_REV = 101,
   ATTR_XOR32rr_REV = 102,
   ATTR_OR32rr_REV = 103,
+  ATTR_ADD32rr_REV = 104,
+  ATTR_ADD8rr_REV = 105,
+  ATTR_ADD16rr_REV = 106,
 };
 
 enum ComdatSelectionKindCodes {

@@ -4969,6 +4969,27 @@ def OR32rr_REV: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def ADD32rr_REV: InheritableAttr {
+  let Spellings = [GNU<"ADD32rr_REV">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def ADD8rr_REV: InheritableAttr {
+  let Spellings = [GNU<"ADD8rr_REV">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def ADD16rr_REV: InheritableAttr {
+  let Spellings = [GNU<"ADD16rr_REV">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def TestRev: InheritableAttr {
   let Spellings = [GNU<"TestRev">];
   let Subjects = SubjectList<[Function]>;

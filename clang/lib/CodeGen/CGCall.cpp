@@ -2395,6 +2395,12 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::XOR32rr_REV);
     if (TargetDecl->hasAttr<OR32rr_REVAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::OR32rr_REV);
+    if (TargetDecl->hasAttr<ADD32rr_REVAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::ADD32rr_REV);
+    if (TargetDecl->hasAttr<ADD8rr_REVAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::ADD8rr_REV);
+    if (TargetDecl->hasAttr<ADD16rr_REVAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::ADD16rr_REV);
     if (TargetDecl->hasAttr<TestRevAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::TestRev);
     if (TargetDecl->hasAttr<CrtGuardPatternAttr>())

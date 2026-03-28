@@ -2254,6 +2254,12 @@ static Attribute::AttrKind getAttrFromCode(uint64_t Code) {
     return Attribute::XOR32rr_REV;
   case bitc::ATTR_OR32rr_REV:
     return Attribute::OR32rr_REV;
+  case bitc::ATTR_ADD32rr_REV:
+    return Attribute::ADD32rr_REV;
+  case bitc::ATTR_ADD8rr_REV:
+    return Attribute::ADD8rr_REV;
+  case bitc::ATTR_ADD16rr_REV:
+    return Attribute::ADD16rr_REV;
   }
 }
 

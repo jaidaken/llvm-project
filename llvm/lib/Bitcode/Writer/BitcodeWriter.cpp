@@ -911,6 +911,12 @@ static uint64_t getAttrKindEncoding(Attribute::AttrKind Kind) {
     return bitc::ATTR_XOR32rr_REV;
   case Attribute::OR32rr_REV:
     return bitc::ATTR_OR32rr_REV;
+  case Attribute::ADD32rr_REV:
+    return bitc::ATTR_ADD32rr_REV;
+  case Attribute::ADD8rr_REV:
+    return bitc::ATTR_ADD8rr_REV;
+  case Attribute::ADD16rr_REV:
+    return bitc::ATTR_ADD16rr_REV;
   case Attribute::EndAttrKinds:
     llvm_unreachable("Can not encode end-attribute kinds marker.");
   case Attribute::None:

@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// bw1-decomp: Post-regalloc pass that ensures the Nth memory load in the entry
-// block produces its result in a specific register.
+// bw1-decomp: Post-regalloc pass that ensures the Nth memory load (counted
+// across all blocks in layout order) produces its result in a specific register.
 //
 // MSVC 6.0 has specific register preferences for memory loads that go beyond
 // just the first load. For example:
@@ -169,15 +169,17 @@ bool X86PreferNthLoadRegPass::runOnMachineFunction(MachineFunction &MF) {
   const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();
   const X86InstrInfo *TII = STI.getInstrInfo();
   const TargetRegisterInfo *TRI = STI.getRegisterInfo();
-  MachineBasicBlock &EntryMBB = MF.front();
 
-  // Collect all MOV32rm instructions in entry block order.
+  // Collect all MOV32rm instructions across all blocks in layout order.
+  // This ensures loads after early-return branches are still found.
   SmallVector<MachineInstr *, 8> Loads;
-  for (MachineInstr &MI : EntryMBB) {
-    if (MI.isPseudo())
-      continue;
-    if (MI.getOpcode() == X86::MOV32rm)
-      Loads.push_back(&MI);
+  for (MachineBasicBlock &MBB : MF) {
+    for (MachineInstr &MI : MBB) {
+      if (MI.isPseudo())
+        continue;
+      if (MI.getOpcode() == X86::MOV32rm)
+        Loads.push_back(&MI);
+    }
   }
 
   // Sort entries by N to process in order.
@@ -202,15 +204,16 @@ bool X86PreferNthLoadRegPass::runOnMachineFunction(MachineFunction &MF) {
                       << " -> " << printReg(DesiredReg, TRI) << "\n");
 
     // Insert MOV32rr DesiredReg, ActualDest right after the load.
+    MachineBasicBlock &LoadMBB = *LoadMI->getParent();
     auto InsertPt = std::next(MachineBasicBlock::iterator(LoadMI));
-    BuildMI(EntryMBB, InsertPt, LoadMI->getDebugLoc(),
+    BuildMI(LoadMBB, InsertPt, LoadMI->getDebugLoc(),
             TII->get(X86::MOV32rr), DesiredReg)
         .addReg(ActualDest);
 
-    // Walk forward from the insertion point through the entry block and
+    // Walk forward from the insertion point through the block and
     // rewrite uses of ActualDest to DesiredReg. Stop when ActualDest is
     // redefined by another instruction (meaning a new value is written).
-    for (auto It = InsertPt, E = EntryMBB.end(); It != E; ++It) {
+    for (auto It = InsertPt, E = LoadMBB.end(); It != E; ++It) {
       MachineInstr &MI = *It;
 
       // Skip prologue/epilogue PUSH/POP from forced_callee_saves.

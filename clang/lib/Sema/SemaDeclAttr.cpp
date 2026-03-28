@@ -2968,6 +2968,13 @@ static void handleInsertDeadAddZeroAttr(Sema &S, Decl *D, const ParsedAttr &AL) 
   D->addAttr(::new (S.Context) InsertDeadAddZeroAttr(S.Context, AL, Str));
 }
 
+static void handlePreferNthLoadRegAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  StringRef Str;
+  if (!S.checkStringLiteralArgumentAttr(AL, 0, Str))
+    return;
+  D->addAttr(::new (S.Context) PreferNthLoadRegAttr(S.Context, AL, Str));
+}
+
 static void handlePreferByteParamLoadAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   StringRef Str;
   if (!S.checkStringLiteralArgumentAttr(AL, 0, Str))
@@ -7040,6 +7047,9 @@ ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D, const ParsedAttr &AL,
   case ParsedAttr::AT_InsertDeadAddZero:
     handleInsertDeadAddZeroAttr(S, D, AL);
     break;
+  case ParsedAttr::AT_PreferNthLoadReg:
+    handlePreferNthLoadRegAttr(S, D, AL);
+    break;
   case ParsedAttr::AT_PreferByteParamLoad:
     handlePreferByteParamLoadAttr(S, D, AL);
     break;
@@ -7484,6 +7494,18 @@ ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D, const ParsedAttr &AL,
 
   case clang::ParsedAttr::AT_OR32rr_REV:
     handleSimpleAttribute<OR32rr_REVAttr>(S, D, AL);
+    break;
+
+  case clang::ParsedAttr::AT_ADD32rr_REV:
+    handleSimpleAttribute<ADD32rr_REVAttr>(S, D, AL);
+    break;
+
+  case clang::ParsedAttr::AT_ADD8rr_REV:
+    handleSimpleAttribute<ADD8rr_REVAttr>(S, D, AL);
+    break;
+
+  case clang::ParsedAttr::AT_ADD16rr_REV:
+    handleSimpleAttribute<ADD16rr_REVAttr>(S, D, AL);
     break;
   }
 }

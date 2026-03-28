@@ -50,6 +50,28 @@
 //   mov eax, 1
 //   ret
 //
+// Pattern 3: Multi-comparison OR pattern.
+//
+// Clang generates:
+//   [CMP/TEST]    ; flag setter 1
+//   setcc1 al     ; result of cmp 1
+//   [CMP/TEST]    ; flag setter 2
+//   setcc2 cl     ; result of cmp 2
+//   or al, cl     ; combine (1 if EITHER is true)
+//   movzx eax, al ; extend
+//   ret
+//
+// MSVC 6.0 generates:
+//   [CMP/TEST]          ; flag setter 1
+//   jcc1 .return_1      ; if cond1 true, return 1
+//   [CMP/TEST]          ; flag setter 2
+//   jcc2 .return_1      ; if cond2 true, return 1
+//   xor eax, eax        ; neither true: return 0
+//   ret
+//   .return_1:
+//   mov eax, 1
+//   ret
+//
 //===----------------------------------------------------------------------===//
 
 #include "X86.h"
@@ -326,6 +348,209 @@ static bool tryTransformMultiSetccAnd(MachineBasicBlock &MBB,
   return true;
 }
 
+/// Try to match and transform the multi-comparison OR pattern in MBB
+/// starting at iterator I. Returns true if the pattern was matched and
+/// transformed.
+///
+/// Pattern:
+///   [CMP/TEST 1]       ; optional flag setter for setcc 1
+///   SETCCr AL, CC1
+///   [CMP/TEST 2]       ; optional flag setter for setcc 2
+///   SETCCr CL, CC2
+///   OR8rr AL, CL
+///   MOVZX32rr8 EAX, AL
+///   [POP32r ...]       ; optional callee-save restores
+///   RET
+///
+/// Replaced with:
+///   [CMP/TEST 1]       ; flag setter 1 stays
+///   JCC_1 TrueMBB, CC1 ; jump to true if condition 1 holds
+///   [CMP/TEST 2]       ; flag setter 2 stays
+///   JCC_1 TrueMBB, CC2 ; jump to true if condition 2 holds
+///   XOR32rr EAX, EAX   ; false path: return 0
+///   [POPs]
+///   RET
+///   TrueMBB:
+///   MOV32ri EAX, 1     ; true path: return 1
+///   [POPs]
+///   RET
+static bool tryTransformMultiSetccOr(MachineBasicBlock &MBB,
+                                     MachineBasicBlock::iterator I,
+                                     const X86InstrInfo *TII,
+                                     MachineFunction &MF) {
+  auto E = MBB.end();
+
+  // Step 1: Find first SETCCr. There may be a flag-setting instruction
+  // (CMP/TEST) immediately before it.
+  auto It = I;
+
+  MachineBasicBlock::iterator FlagSet1;
+  bool HasFlagSet1 = false;
+  if (It != E && It->isCompare()) {
+    HasFlagSet1 = true;
+    FlagSet1 = It;
+    It = skipNonReal(std::next(It), E);
+  }
+
+  if (It == E || It->getOpcode() != X86::SETCCr)
+    return false;
+  auto Set1I = It;
+  Register Set1Reg = Set1I->getOperand(0).getReg();
+  X86::CondCode CC1 = X86::getCondFromSETCC(*Set1I);
+  if (CC1 == X86::COND_INVALID)
+    return false;
+
+  // Step 2: Find second flag-setter (optional) + SETCCr pair.
+  It = skipNonReal(std::next(Set1I), E);
+
+  MachineBasicBlock::iterator FlagSet2;
+  bool HasFlagSet2 = false;
+  if (It != E && It->isCompare()) {
+    HasFlagSet2 = true;
+    FlagSet2 = It;
+    It = skipNonReal(std::next(It), E);
+  }
+
+  if (It == E || It->getOpcode() != X86::SETCCr)
+    return false;
+  auto Set2I = It;
+  Register Set2Reg = Set2I->getOperand(0).getReg();
+  X86::CondCode CC2 = X86::getCondFromSETCC(*Set2I);
+  if (CC2 == X86::COND_INVALID)
+    return false;
+
+  // The two SETCCr results must go to different 8-bit registers.
+  if (Set1Reg == Set2Reg)
+    return false;
+
+  // Step 3: Expect OR8rr combining the two setcc results.
+  It = skipNonReal(std::next(Set2I), E);
+  if (It == E || It->getOpcode() != X86::OR8rr)
+    return false;
+  auto OrI = It;
+
+  // Verify the OR uses the two setcc destination registers.
+  Register OrDst = OrI->getOperand(0).getReg();
+  Register OrSrc1 = OrI->getOperand(1).getReg();
+  Register OrSrc2 = OrI->getOperand(2).getReg();
+  if (!((OrSrc1 == Set1Reg && OrSrc2 == Set2Reg) ||
+        (OrSrc1 == Set2Reg && OrSrc2 == Set1Reg)))
+    return false;
+
+  // Step 4: Expect MOVZX32rr8 extending the OR result to a 32-bit register.
+  It = skipNonReal(std::next(OrI), E);
+  if (It == E || It->getOpcode() != X86::MOVZX32rr8)
+    return false;
+  auto MovzxI = It;
+  Register RetReg32 = MovzxI->getOperand(0).getReg();
+  if (MovzxI->getOperand(1).getReg() != OrDst)
+    return false;
+
+  // Step 5: Skip optional POP32r instructions, then expect RET.
+  It = skipNonReal(std::next(MovzxI), E);
+  SmallVector<MachineInstr *, 4> Pops;
+  while (It != E && It->getOpcode() == X86::POP32r) {
+    Pops.push_back(&*It);
+    It = skipNonReal(std::next(It), E);
+  }
+
+  MachineBasicBlock::iterator RetI;
+  bool RetInSameBlock = false;
+
+  if (It != E && isRetInstruction(*It)) {
+    RetI = It;
+    RetInSameBlock = true;
+  } else if (It == E) {
+    MachineBasicBlock *NextMBB = MBB.getNextNode();
+    if (NextMBB && !NextMBB->empty() && isRetInstruction(NextMBB->front())) {
+      RetI = NextMBB->front().getIterator();
+    } else {
+      return false;
+    }
+  } else {
+    return false;
+  }
+
+  // Step 6: Build the replacement.
+  //   [CMP/TEST 1]         ; stays in place
+  //   JCC_1 TrueMBB, CC1   ; if cond1 true, return 1
+  //   [CMP/TEST 2]         ; stays in place
+  //   JCC_1 TrueMBB, CC2   ; if cond2 true, return 1
+  //   XOR32rr EAX, EAX     ; false path (neither true)
+  //   [POPs]
+  //   RET
+  //   TrueMBB:
+  //   MOV32ri EAX, 1       ; true path
+  //   [POPs]
+  //   RET
+
+  DebugLoc DL = Set1I->getDebugLoc();
+
+  // Create the "true" block (return 1) after the current block.
+  MachineBasicBlock *TrueMBB = MF.CreateMachineBasicBlock();
+  TrueMBB->setLabelMustBeEmitted();
+  MF.insert(std::next(MachineFunction::iterator(&MBB)), TrueMBB);
+
+  // Replace first SETCCr with JCC to TrueMBB using its condition.
+  BuildMI(MBB, *Set1I, DL, TII->get(X86::JCC_1))
+      .addMBB(TrueMBB)
+      .addImm(CC1);
+
+  // Replace second SETCCr with JCC to TrueMBB using its condition.
+  BuildMI(MBB, *Set2I, DL, TII->get(X86::JCC_1))
+      .addMBB(TrueMBB)
+      .addImm(CC2);
+
+  // False path: XOR reg, reg (return 0) in the current block.
+  MachineInstr *InsertBefore = &*OrI;
+  BuildMI(MBB, *InsertBefore, DL, TII->get(X86::XOR32rr), RetReg32)
+      .addReg(RetReg32, RegState::Undef)
+      .addReg(RetReg32, RegState::Undef);
+
+  // Clone the POPs for the false path.
+  for (MachineInstr *PopMI : Pops) {
+    MachineInstr *Clone = MF.CloneMachineInstr(PopMI);
+    MBB.insert(InsertBefore, Clone);
+  }
+
+  // Clone the RET for the false path.
+  {
+    MachineInstr *FalseRet = MF.CloneMachineInstr(&*RetI);
+    MBB.insert(InsertBefore, FalseRet);
+  }
+
+  // Build the true block: MOV reg, 1; [POPs]; RET.
+  BuildMI(*TrueMBB, TrueMBB->end(), DL, TII->get(X86::MOV32ri), RetReg32)
+      .addImm(1);
+
+  for (MachineInstr *PopMI : Pops) {
+    MachineInstr *Clone = MF.CloneMachineInstr(PopMI);
+    TrueMBB->insert(TrueMBB->end(), Clone);
+  }
+
+  // Transfer successors from MBB to TrueMBB and wire up.
+  TrueMBB->transferSuccessorsAndUpdatePHIs(&MBB);
+  MBB.addSuccessor(TrueMBB);
+
+  // Move or clone the RET into the true block.
+  if (RetInSameBlock) {
+    TrueMBB->splice(TrueMBB->end(), &MBB, RetI, MBB.end());
+  } else {
+    MachineInstr *ClonedRet = MF.CloneMachineInstr(&*RetI);
+    TrueMBB->insert(TrueMBB->end(), ClonedRet);
+  }
+
+  // Erase the old instructions: SETCCr x2, OR8rr, MOVZX, POPs.
+  for (MachineInstr *PopMI : Pops)
+    PopMI->eraseFromParent();
+  MovzxI->eraseFromParent();
+  OrI->eraseFromParent();
+  Set2I->eraseFromParent();
+  Set1I->eraseFromParent();
+
+  return true;
+}
+
 bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
   if (!MF.getFunction().hasFnAttribute("prevent_setcc_merge"))
     return false;
@@ -348,6 +573,25 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
         // or the first SETCCr.
         if (I->isCompare() || I->getOpcode() == X86::SETCCr) {
           if (tryTransformMultiSetccAnd(MBB, I, TII, MF)) {
+            Changed = true;
+            BlockChanged = true;
+            break; // restart scan on this block
+          }
+        }
+      }
+    }
+  }
+
+  // Pattern 3: Multi-comparison OR pattern.
+  // Scan each block for SETCCr + SETCCr + OR8rr + MOVZX + RET sequences.
+  // Runs before Pattern 1 for the same reason as Pattern 2.
+  for (MachineBasicBlock &MBB : MF) {
+    bool BlockChanged = true;
+    while (BlockChanged) {
+      BlockChanged = false;
+      for (auto I = MBB.begin(), E = MBB.end(); I != E; ++I) {
+        if (I->isCompare() || I->getOpcode() == X86::SETCCr) {
+          if (tryTransformMultiSetccOr(MBB, I, TII, MF)) {
             Changed = true;
             BlockChanged = true;
             break; // restart scan on this block

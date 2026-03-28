@@ -953,6 +953,9 @@ Function *CodeExtractor::constructFunctionDeclaration(
       case Attribute::MOV32rr_REV:
       case Attribute::XOR32rr_REV:
       case Attribute::OR32rr_REV:
+      case Attribute::ADD32rr_REV:
+      case Attribute::ADD8rr_REV:
+      case Attribute::ADD16rr_REV:
         break;
       // These attributes cannot be applied to functions.
       case Attribute::Alignment:

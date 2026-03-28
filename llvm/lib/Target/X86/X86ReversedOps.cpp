@@ -32,7 +32,11 @@ public:
     bool HasMovRev = MF.getFunction().hasFnAttribute(Attribute::MOV32rr_REV);
     bool HasOrRev = MF.getFunction().hasFnAttribute(Attribute::OR32rr_REV);
     bool HasTestRev = MF.getFunction().hasFnAttribute(Attribute::TestRev);
-    if (!HasRegAlloc && !HasMovRev && !HasOrRev && !HasTestRev)
+    bool HasAdd32Rev = MF.getFunction().hasFnAttribute(Attribute::ADD32rr_REV);
+    bool HasAdd8Rev = MF.getFunction().hasFnAttribute(Attribute::ADD8rr_REV);
+    bool HasAdd16Rev = MF.getFunction().hasFnAttribute(Attribute::ADD16rr_REV);
+    if (!HasRegAlloc && !HasMovRev && !HasOrRev && !HasTestRev &&
+        !HasAdd32Rev && !HasAdd8Rev && !HasAdd16Rev)
       return false;
 
     bool Changed = false;
@@ -77,6 +81,13 @@ public:
           default: break;
           }
         }
+        // ADD reversal gated on individual ADD*rr_REV attributes
+        if (!NewOpc && HasAdd32Rev && MI.getOpcode() == X86::ADD32rr)
+          NewOpc = X86::ADD32rr_REV;
+        if (!NewOpc && HasAdd8Rev && MI.getOpcode() == X86::ADD8rr)
+          NewOpc = X86::ADD8rr_REV;
+        if (!NewOpc && HasAdd16Rev && MI.getOpcode() == X86::ADD16rr)
+          NewOpc = X86::ADD16rr_REV;
         if (NewOpc) {
           MI.setDesc(MF.getSubtarget().getInstrInfo()->get(NewOpc));
           Changed = true;
