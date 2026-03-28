@@ -119,8 +119,8 @@ bool X86DelayedCalleeSavePass::runOnMachineFunction(MachineFunction &MF) {
   if (!parseAttribute(AttrVal, DelayReg, Placement))
     return false;
 
-  // Only "after_first_test" placement is supported.
-  if (Placement != "after_first_test")
+  // Supported placements: "after_first_test", "after_first_add".
+  if (Placement != "after_first_test" && Placement != "after_first_add")
     return false;
 
   const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();
@@ -154,46 +154,63 @@ bool X86DelayedCalleeSavePass::runOnMachineFunction(MachineFunction &MF) {
     return false;
   }
 
-  // Phase 2: Find the first TEST/CMP in the entry block and the JCC after it.
-  MachineInstr *FirstTestCmp = nullptr;
-  MachineInstr *FollowingJcc = nullptr;
-  for (auto I = EntryBlock->begin(), E = EntryBlock->end(); I != E; ++I) {
-    if (isTestOrCmp(*I)) {
-      FirstTestCmp = &*I;
-      // Find the JCC after the TEST/CMP (skipping debug instrs).
-      auto JccIt = std::next(I);
-      while (JccIt != E && (JccIt->isDebugInstr() || JccIt->isPseudo()))
-        ++JccIt;
-      if (JccIt != E &&
-          (JccIt->getOpcode() == X86::JCC_1 ||
-           JccIt->getOpcode() == X86::JCC_4)) {
-        FollowingJcc = &*JccIt;
+  // Phase 2: Find the insertion point based on placement mode.
+  MachineBasicBlock::iterator InsertBefore = EntryBlock->end();
+
+  if (Placement == "after_first_test") {
+    // Find the first TEST/CMP and insert before the following JCC.
+    for (auto I = EntryBlock->begin(), E = EntryBlock->end(); I != E; ++I) {
+      if (isTestOrCmp(*I)) {
+        // Find the JCC after the TEST/CMP (skipping debug instrs).
+        auto JccIt = std::next(I);
+        while (JccIt != E && (JccIt->isDebugInstr() || JccIt->isPseudo()))
+          ++JccIt;
+        if (JccIt != E &&
+            (JccIt->getOpcode() == X86::JCC_1 ||
+             JccIt->getOpcode() == X86::JCC_4)) {
+          InsertBefore = JccIt;
+        }
+        break;
       }
-      break;
+    }
+    if (InsertBefore == EntryBlock->end()) {
+      LLVM_DEBUG(dbgs() << "DelayedCalleeSave: no TEST/CMP + JCC found in "
+                        << MF.getName() << "\n");
+      return false;
+    }
+  } else if (Placement == "after_first_add") {
+    // Find the first ADD instruction and insert right after it.
+    for (auto I = EntryBlock->begin(), E = EntryBlock->end(); I != E; ++I) {
+      if (I->isDebugInstr() || I->isPseudo())
+        continue;
+      unsigned Opc = I->getOpcode();
+      if (Opc == X86::ADD32ri || Opc == X86::ADD32ri8 ||
+          Opc == X86::ADD32rr) {
+        InsertBefore = std::next(I);
+        break;
+      }
+    }
+    if (InsertBefore == EntryBlock->end()) {
+      LLVM_DEBUG(dbgs() << "DelayedCalleeSave: no ADD found in "
+                        << MF.getName() << "\n");
+      return false;
     }
   }
 
-  if (!FirstTestCmp || !FollowingJcc) {
-    LLVM_DEBUG(dbgs() << "DelayedCalleeSave: no TEST/CMP + JCC found in "
-                      << MF.getName() << "\n");
-    return false;
-  }
-
   LLVM_DEBUG(dbgs() << "DelayedCalleeSave: delaying PUSH "
-                    << printReg(DelayReg, TRI) << " to after "
-                    << TII->getName(FirstTestCmp->getOpcode()) << " in "
-                    << MF.getName() << "\n");
+                    << printReg(DelayReg, TRI) << " in "
+                    << MF.getName() << " (placement: " << Placement << ")\n");
 
   // Phase 3: Remove the original PUSH from the prologue. Before removing,
   // adjust ESP-relative displacements between the push and the insertion
   // point, since removing the push changes the stack by -4 (ESP is 4 higher
   // without the push).
   //
-  // Walk from right after the removed PUSH to the insertion point (before
-  // FollowingJcc) and adjust ESP-based displacements by -4.
+  // Walk from right after the removed PUSH to the insertion point and adjust
+  // ESP-based displacements by -4.
   {
     auto StartIt = std::next(MachineBasicBlock::iterator(PushToRemove));
-    auto EndIt = MachineBasicBlock::iterator(FollowingJcc);
+    auto EndIt = InsertBefore;
     for (auto It = StartIt; It != EndIt; ++It) {
       if (It->isDebugInstr() || It->isPseudo())
         continue;
@@ -217,10 +234,8 @@ bool X86DelayedCalleeSavePass::runOnMachineFunction(MachineFunction &MF) {
   // Remove the original PUSH.
   PushToRemove->eraseFromParent();
 
-  // Phase 4: Insert the PUSH between TEST/CMP and JCC.
-  // Insert before FollowingJcc (after TEST/CMP and any non-JCC instructions
-  // between them).
-  BuildMI(*EntryBlock, FollowingJcc, DL, TII->get(X86::PUSH32r))
+  // Phase 4: Insert the PUSH at the determined insertion point.
+  BuildMI(*EntryBlock, InsertBefore, DL, TII->get(X86::PUSH32r))
       .addReg(DelayReg, RegState::Undef);
 
   // Phase 5: The corresponding POP is already in place from

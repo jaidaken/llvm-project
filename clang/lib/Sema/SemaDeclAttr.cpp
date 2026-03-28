@@ -2982,6 +2982,13 @@ static void handleSplitCalleeSavesAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   D->addAttr(::new (S.Context) SplitCalleeSavesAttr(S.Context, AL, Str));
 }
 
+static void handleDelayedCalleeSaveAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  StringRef Str;
+  if (!S.checkStringLiteralArgumentAttr(AL, 0, Str))
+    return;
+  D->addAttr(::new (S.Context) DelayedCalleeSaveAttr(S.Context, AL, Str));
+}
+
 static void handleCodeModelAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   StringRef Str;
   SourceLocation LiteralLoc;
@@ -7038,6 +7045,9 @@ ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D, const ParsedAttr &AL,
     break;
   case ParsedAttr::AT_SplitCalleeSaves:
     handleSplitCalleeSavesAttr(S, D, AL);
+    break;
+  case ParsedAttr::AT_DelayedCalleeSave:
+    handleDelayedCalleeSaveAttr(S, D, AL);
     break;
   case ParsedAttr::AT_CodeModel:
     handleCodeModelAttr(S, D, AL);
