@@ -47,6 +47,9 @@ char X86MergeReturnBlocksPass::ID = 0;
 
 /// Build a canonical string representation of a basic block's instruction
 /// sequence. Two blocks with identical keys have identical instructions.
+/// Only considers explicit operands to avoid mismatches from implicit
+/// operand differences (e.g., duplicated implicit defs from CloneMachineInstr
+/// vs BuildMI, or varying kill/dead flags on implicit operands).
 static std::string getBlockKey(const MachineBasicBlock &MBB) {
   std::string Key;
   raw_string_ostream OS(Key);
@@ -54,7 +57,7 @@ static std::string getBlockKey(const MachineBasicBlock &MBB) {
     if (MI.isDebugInstr())
       continue;
     OS << MI.getOpcode();
-    for (unsigned i = 0, e = MI.getNumOperands(); i < e; ++i) {
+    for (unsigned i = 0, e = MI.getNumExplicitOperands(); i < e; ++i) {
       const MachineOperand &MO = MI.getOperand(i);
       OS << ',';
       if (MO.isReg())
@@ -88,6 +91,9 @@ bool X86MergeReturnBlocksPass::runOnMachineFunction(MachineFunction &MF) {
   if (!MF.getFunction().hasFnAttribute("merge_return_blocks"))
     return false;
 
+  fprintf(stderr, "[MergeReturnBlocks] Processing function: %s\n",
+          MF.getName().str().c_str());
+
   bool Changed = false;
 
   // Group return blocks by their instruction sequence.
@@ -96,14 +102,22 @@ bool X86MergeReturnBlocksPass::runOnMachineFunction(MachineFunction &MF) {
     if (!endsWithReturn(MBB))
       continue;
     std::string Key = getBlockKey(MBB);
+    fprintf(stderr, "[MergeReturnBlocks]   BB#%d ends with return, key='%s' (%d instrs)\n",
+            MBB.getNumber(), Key.c_str(), (int)MBB.size());
     Groups[Key].push_back(&MBB);
   }
 
   // For each group with 2+ blocks, keep the first and redirect others.
   for (auto &KV : Groups) {
     SmallVector<MachineBasicBlock *, 4> &Blocks = KV.second;
-    if (Blocks.size() < 2)
+    if (Blocks.size() < 2) {
+      fprintf(stderr, "[MergeReturnBlocks]   Group with key='%s' has only 1 block, skipping\n",
+              KV.first.c_str());
       continue;
+    }
+
+    fprintf(stderr, "[MergeReturnBlocks]   Merging group with key='%s' (%d blocks)\n",
+            KV.first.c_str(), (int)Blocks.size());
 
     MachineBasicBlock *Canonical = Blocks[0];
 

@@ -7032,8 +7032,12 @@ Value *llvm::simplifyLoadInst(LoadInst *LI, Value *PtrOp,
 
   // We can only fold the load if it is from a constant global with definitive
   // initializer. Skip expensive logic if this is not the case.
+  // Note: hasDefinitiveInitializer() already returns false for
+  // externally_initialized globals, but we check explicitly as a safeguard
+  // for opaque_global variables whose values may change via inline asm.
   auto *GV = dyn_cast<GlobalVariable>(getUnderlyingObject(PtrOp));
-  if (!GV || !GV->isConstant() || !GV->hasDefinitiveInitializer())
+  if (!GV || !GV->isConstant() || !GV->hasDefinitiveInitializer() ||
+      GV->isExternallyInitialized())
     return nullptr;
 
   // If GlobalVariable's initializer is uniform, then return the constant

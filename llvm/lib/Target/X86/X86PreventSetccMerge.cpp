@@ -98,6 +98,9 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
   if (!MF.getFunction().hasFnAttribute("prevent_setcc_merge"))
     return false;
 
+  fprintf(stderr, "[PreventSetccMerge] Processing function: %s\n",
+          MF.getName().str().c_str());
+
   const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();
   const X86InstrInfo *TII = STI.getInstrInfo();
   bool Changed = false;
@@ -225,6 +228,9 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
         continue;
       }
 
+      fprintf(stderr, "[PreventSetccMerge]   Found XOR+SETCCr pattern in BB#%d, CC=%d, InvCC=%d, %d POPs, RetInSameBlock will be checked\n",
+              MBB.getNumber(), (int)CC, (int)InvCC, (int)Pops.size());
+
       DebugLoc DL = XorMI.getDebugLoc();
 
       // Create the "false" block after the current block.
@@ -249,19 +255,18 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
           .addImm(1);
 
       // Clone the POPs for the true path (callee-save restores).
+      // Use CloneMachineInstr to avoid duplicating implicit operands
+      // (BuildMI adds implicits from MCInstrDesc, then copying all
+      // operands from the original would double them).
       for (MachineInstr *PopMI : Pops) {
-        auto Clone = BuildMI(MBB, *InsertBefore, DL,
-                              TII->get(PopMI->getOpcode()));
-        for (const auto &MO : PopMI->operands())
-          Clone.add(MO);
+        MachineInstr *Clone = MF.CloneMachineInstr(PopMI);
+        MBB.insert(InsertBefore, Clone);
       }
 
       // Clone the RET for the true path.
       {
-        auto TrueRet = BuildMI(MBB, *InsertBefore, DL,
-                                TII->get(RetI->getOpcode()));
-        for (const auto &MO : RetI->operands())
-          TrueRet.add(MO);
+        MachineInstr *TrueRet = MF.CloneMachineInstr(&*RetI);
+        MBB.insert(InsertBefore, TrueRet);
       }
 
       // Build in false block: XOR EAX, EAX using the same encoding (REV or
@@ -273,10 +278,8 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
 
       // Clone the POPs for the false path (callee-save restores).
       for (MachineInstr *PopMI : Pops) {
-        auto Clone = BuildMI(*FalseMBB, FalseMBB->end(), DL,
-                              TII->get(PopMI->getOpcode()));
-        for (const auto &MO : PopMI->operands())
-          Clone.add(MO);
+        MachineInstr *Clone = MF.CloneMachineInstr(PopMI);
+        FalseMBB->insert(FalseMBB->end(), Clone);
       }
 
       // Transfer successors from MBB to FalseMBB and wire up.
@@ -287,10 +290,8 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
       if (RetInSameBlock) {
         FalseMBB->splice(FalseMBB->end(), &MBB, RetI, MBB.end());
       } else {
-        auto ClonedRet = BuildMI(*FalseMBB, FalseMBB->end(), DL,
-                                  TII->get(RetI->getOpcode()));
-        for (const auto &MO : RetI->operands())
-          ClonedRet.add(MO);
+        MachineInstr *ClonedRet = MF.CloneMachineInstr(&*RetI);
+        FalseMBB->insert(FalseMBB->end(), ClonedRet);
       }
 
       // Remove the old XOR, SETCCr, and POP instructions.

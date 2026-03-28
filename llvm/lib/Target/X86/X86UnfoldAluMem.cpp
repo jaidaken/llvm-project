@@ -18,7 +18,7 @@
 // ALU to match the MSVC 6.0 output. The reversed ops pass will later
 // convert the register-register ALU to the reversed encoding.
 //
-// Gate: function attribute "unfold_alu_mem".
+// Gate: function attribute "unfold_alu_mem" or "prevent_add_load_fold".
 //
 //===----------------------------------------------------------------------===//
 
@@ -104,7 +104,8 @@ public:
 char X86UnfoldAluMemPass::ID = 0;
 
 bool X86UnfoldAluMemPass::runOnMachineFunction(MachineFunction &MF) {
-  if (!MF.getFunction().hasFnAttribute("unfold_alu_mem"))
+  if (!MF.getFunction().hasFnAttribute("unfold_alu_mem") &&
+      !MF.getFunction().hasFnAttribute("prevent_add_load_fold"))
     return false;
 
   const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();

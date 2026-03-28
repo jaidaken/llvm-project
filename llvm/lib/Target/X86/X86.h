@@ -138,6 +138,10 @@ FunctionPass *createX86Msvc6FastcallRegFixPass();
 /// reversed encoding variants (e.g., ADD32rr -> ADD32rr_REV) for MSVC 6.0.
 FunctionPass *createX86ReversedOpsPass();
 
+/// Return a Machine IR pass that expands TEST8ri reg, 1 into MOV8ri AL, 1 +
+/// TEST8rr AL, reg for CRT static initializer guard patterns (MSVC 6.0).
+FunctionPass *createX86CrtGuardPatternPass();
+
 /// Return a Machine IR pass that converts CMP32mr to CMP32rm (swapping memory
 /// and register operands) and flips following condition codes for MSVC 6.0.
 FunctionPass *createX86CmpRevPass();
@@ -215,6 +219,10 @@ FunctionPass *createX86PreferPopCleanupPass();
 /// Return a Machine IR pass that converts TEST8mi (test byte [mem], imm)
 /// to MOV32rm + TEST8ri AH/CH for high-byte tests (MSVC 6.0 pattern).
 FunctionPass *createX86PreferTestAhPass();
+
+/// Return a Machine IR pass that converts MOV32rm [ESP+offset] to
+/// XOR32rr_REV + MOV8rm for stack params specified by prefer_byte_param_load.
+FunctionPass *createX86PreferByteParamLoadPass();
 
 /// Return a Machine IR pass that converts MOVZX32rr16 to MOV32rr + AND32ri
 /// 0xFFFF for functions with the prefer_and_mask attribute.

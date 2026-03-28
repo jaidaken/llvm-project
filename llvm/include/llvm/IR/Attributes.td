@@ -535,3 +535,6 @@ def Msvc6PartialReturn : EnumAttr<"Msvc6PartialReturn", IntersectPreserve, [FnAt
 
 /// Swap TEST register operands to match MSVC 6.0 ModR/M encoding order.
 def TestRev : EnumAttr<"TestRev", IntersectPreserve, [FnAttr]>;
+
+/// Convert TEST8ri reg, 1 to MOV8ri AL, 1 + TEST8rr AL, reg for CRT guard pattern.
+def CrtGuardPattern : EnumAttr<"CrtGuardPattern", IntersectPreserve, [FnAttr]>;

@@ -45,6 +45,7 @@ set(sources
   X86Msvc6PartialReturn.cpp
   X86FixupMovzxOverlap.cpp
   X86ReversedOps.cpp
+  X86CrtGuardPattern.cpp
   X86CmpRev.cpp
   X86CmpLhsReg.cpp
   X86PreferBaseAdjust.cpp
@@ -66,6 +67,7 @@ set(sources
   X86PreferFmulMem.cpp
   X86PreferPopCleanup.cpp
   X86PreferTestAh.cpp
+  X86PreferByteParamLoad.cpp
   X86PreferAndMask.cpp
   X86PreferMovImm.cpp
   X86PreferMovPush.cpp

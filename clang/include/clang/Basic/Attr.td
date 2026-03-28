@@ -4969,6 +4969,20 @@ def OR32rr_REV: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def TestRev: InheritableAttr {
+  let Spellings = [GNU<"TestRev">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def CrtGuardPattern: InheritableAttr {
+  let Spellings = [GNU<"crt_guard_pattern">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def NoCopyProp: InheritableAttr {
   let Spellings = [GNU<"no_copy_prop">];
   let Subjects = SubjectList<[Function]>;
@@ -5277,6 +5291,13 @@ def UnfoldAluMem: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def PreventAddLoadFold: InheritableAttr {
+  let Spellings = [GNU<"prevent_add_load_fold">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def ZeroViaXor: InheritableAttr {
   let Spellings = [GNU<"zero_via_xor">];
   let Subjects = SubjectList<[Function]>;
@@ -5480,6 +5501,13 @@ def PreferTestAh: InheritableAttr {
   let Documentation = [Undocumented];
 }
 
+def PreferTestAhReg: InheritableAttr {
+  let Spellings = [GNU<"prefer_test_ah_reg">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def DeferZeroEax: InheritableAttr {
   let Spellings = [GNU<"defer_zero_eax">];
   let Subjects = SubjectList<[Function]>;
@@ -5527,6 +5555,13 @@ def PreferBaseAdjust: InheritableAttr {
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
   let SimpleHandler = 1;
+}
+
+def PreferByteParamLoad: InheritableAttr {
+  let Spellings = [GNU<"prefer_byte_param_load">];
+  let Args = [StringArgument<"Offsets">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
 }
 
 def OpaqueGlobal : Attr {

@@ -1,6 +1,9 @@
 // bw1-decomp: Convert TEST8mi (test byte [mem], imm) to MOV32rm + TEST8ri AH
 // for functions with the "prefer_test_ah" attribute.
 //
+// Also converts TEST32ri reg, 0x0000NN00 to TEST8ri high_byte(reg), 0xNN
+// for functions with the "prefer_test_ah_reg" attribute.
+//
 // MSVC 6.0 tests bit flags by loading a full dword into a register, then
 // testing the high byte:
 //   mov eax, [ecx+4]    ; load full dword
@@ -20,6 +23,14 @@
 // Each entry specifies the displacement of the TEST8mi and which 32-bit
 // register to use for the load (eax or ecx). The load displacement is
 // automatically computed as (offset - 1).
+//
+// Register test mode ("prefer_test_ah_reg" attribute):
+//   MSVC 6.0:  test ah, 0x80  (F6 C4 80 - 3 bytes)
+//   Clang:     test eax, 0x00008000  (A9 00 80 00 00 - 5 bytes)
+//
+// When the immediate in TEST32ri has set bits only in the second byte
+// (0x0000NN00), the instruction is replaced with TEST8ri on the high-byte
+// sub-register (AH, CH, DH, BH).
 
 #include "X86.h"
 #include "X86InstrInfo.h"
@@ -54,6 +65,10 @@ public:
 private:
   static bool parseEntries(StringRef AttrVal,
                            SmallVectorImpl<TestAhEntry> &Entries);
+  static Register getHighByteReg(Register Reg32);
+  bool convertTestMemEntries(MachineFunction &MF, const X86InstrInfo *TII,
+                             SmallVectorImpl<TestAhEntry> &Entries);
+  bool convertTestRegImm(MachineFunction &MF, const X86InstrInfo *TII);
 };
 
 } // end anonymous namespace
@@ -92,19 +107,21 @@ bool X86PreferTestAhPass::parseEntries(
   return !Entries.empty();
 }
 
-bool X86PreferTestAhPass::runOnMachineFunction(MachineFunction &MF) {
-  const Function &F = MF.getFunction();
-  if (!F.hasFnAttribute("prefer_test_ah"))
-    return false;
+/// Map a 32-bit register to its high-byte sub-register.
+/// Returns Register() (invalid) for registers without a high-byte form.
+Register X86PreferTestAhPass::getHighByteReg(Register Reg32) {
+  switch (Reg32) {
+  case X86::EAX: return X86::AH;
+  case X86::ECX: return X86::CH;
+  case X86::EDX: return X86::DH;
+  case X86::EBX: return X86::BH;
+  default: return Register();
+  }
+}
 
-  StringRef AttrVal =
-      F.getFnAttribute("prefer_test_ah").getValueAsString();
-  SmallVector<TestAhEntry, 4> Entries;
-  if (!parseEntries(AttrVal, Entries))
-    return false;
-
-  const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();
-  const X86InstrInfo *TII = STI.getInstrInfo();
+bool X86PreferTestAhPass::convertTestMemEntries(
+    MachineFunction &MF, const X86InstrInfo *TII,
+    SmallVectorImpl<TestAhEntry> &Entries) {
   bool Changed = false;
 
   for (MachineBasicBlock &MBB : MF) {
@@ -170,6 +187,91 @@ bool X86PreferTestAhPass::runOnMachineFunction(MachineFunction &MF) {
       Changed = true;
     }
   }
+
+  return Changed;
+}
+
+bool X86PreferTestAhPass::convertTestRegImm(MachineFunction &MF,
+                                             const X86InstrInfo *TII) {
+  bool Changed = false;
+
+  for (MachineBasicBlock &MBB : MF) {
+    for (auto I = MBB.begin(), E = MBB.end(); I != E;) {
+      MachineInstr &MI = *I;
+
+      if (MI.getOpcode() != X86::TEST32ri) {
+        ++I;
+        continue;
+      }
+
+      // TEST32ri operands: [reg(0), imm(1)]
+      if (MI.getNumOperands() < 2) {
+        ++I;
+        continue;
+      }
+
+      Register SrcReg = MI.getOperand(0).getReg();
+      int64_t ImmVal = MI.getOperand(1).getImm();
+
+      // Check that set bits are entirely in the second byte (0x0000NN00).
+      // Low byte must be zero and upper two bytes must be zero.
+      if ((ImmVal & 0xFF) != 0 || (ImmVal & 0xFFFF0000) != 0 ||
+          (ImmVal & 0xFF00) == 0) {
+        ++I;
+        continue;
+      }
+
+      Register HighReg = getHighByteReg(SrcReg);
+      if (!HighReg.isValid()) {
+        ++I;
+        continue;
+      }
+
+      int64_t ShiftedImm = (ImmVal >> 8) & 0xFF;
+      DebugLoc DL = MI.getDebugLoc();
+
+      LLVM_DEBUG(dbgs() << "  Converting TEST32ri to TEST8ri AH: "
+                        << MI);
+
+      // Build: TEST8ri high_byte(reg), shifted_imm
+      BuildMI(MBB, MI, DL, TII->get(X86::TEST8ri))
+          .addReg(HighReg)
+          .addImm(ShiftedImm);
+
+      auto NextI = std::next(I);
+      MI.eraseFromParent();
+      I = NextI;
+      Changed = true;
+    }
+  }
+
+  return Changed;
+}
+
+bool X86PreferTestAhPass::runOnMachineFunction(MachineFunction &MF) {
+  const Function &F = MF.getFunction();
+  bool HasMemAttr = F.hasFnAttribute("prefer_test_ah");
+  bool HasRegAttr = F.hasFnAttribute("prefer_test_ah_reg");
+
+  if (!HasMemAttr && !HasRegAttr)
+    return false;
+
+  const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();
+  const X86InstrInfo *TII = STI.getInstrInfo();
+  bool Changed = false;
+
+  // Handle TEST8mi -> MOV32rm + TEST8ri (memory test mode).
+  if (HasMemAttr) {
+    StringRef AttrVal =
+        F.getFnAttribute("prefer_test_ah").getValueAsString();
+    SmallVector<TestAhEntry, 4> Entries;
+    if (parseEntries(AttrVal, Entries))
+      Changed |= convertTestMemEntries(MF, TII, Entries);
+  }
+
+  // Handle TEST32ri -> TEST8ri (register test mode).
+  if (HasRegAttr)
+    Changed |= convertTestRegImm(MF, TII);
 
   return Changed;
 }

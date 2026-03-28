@@ -735,8 +735,12 @@ Constant *llvm::ConstantFoldLoadFromConstPtr(Constant *C, Type *Ty,
                                              const DataLayout &DL) {
   // We can only fold loads from constant globals with a definitive initializer.
   // Check this upfront, to skip expensive offset calculations.
+  // Note: hasDefinitiveInitializer() already returns false for
+  // externally_initialized globals, but we check explicitly as a safeguard
+  // for opaque_global variables whose values may change via inline asm.
   auto *GV = dyn_cast<GlobalVariable>(getUnderlyingObject(C));
-  if (!GV || !GV->isConstant() || !GV->hasDefinitiveInitializer())
+  if (!GV || !GV->isConstant() || !GV->hasDefinitiveInitializer() ||
+      GV->isExternallyInitialized())
     return nullptr;
 
   C = cast<Constant>(C->stripAndAccumulateConstantOffsets(

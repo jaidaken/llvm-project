@@ -2395,6 +2395,10 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::XOR32rr_REV);
     if (TargetDecl->hasAttr<OR32rr_REVAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::OR32rr_REV);
+    if (TargetDecl->hasAttr<TestRevAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::TestRev);
+    if (TargetDecl->hasAttr<CrtGuardPatternAttr>())
+      FuncAttrs.addAttribute(llvm::Attribute::CrtGuardPattern);
     if (TargetDecl->hasAttr<NoCopyPropAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::NoCopyProp);
     if (TargetDecl->hasAttr<NoBoolMaskAttr>())
@@ -2477,6 +2481,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("unfold_cmp_mem_ecx");
     if (TargetDecl->hasAttr<UnfoldAluMemAttr>())
       FuncAttrs.addAttribute("unfold_alu_mem");
+    if (TargetDecl->hasAttr<PreventAddLoadFoldAttr>())
+      FuncAttrs.addAttribute("prevent_add_load_fold");
     if (TargetDecl->hasAttr<ZeroViaXorAttr>())
       FuncAttrs.addAttribute("zero_via_xor");
     if (TargetDecl->hasAttr<SplitWordStoresAttr>())
@@ -2552,6 +2558,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("prefer_preload_stack_param");
     if (const auto *PTA = TargetDecl->getAttr<PreferTestAhAttr>())
       FuncAttrs.addAttribute("prefer_test_ah", PTA->getSpec());
+    if (TargetDecl->hasAttr<PreferTestAhRegAttr>())
+      FuncAttrs.addAttribute("prefer_test_ah_reg");
     if (TargetDecl->hasAttr<DeferZeroEaxAttr>())
       FuncAttrs.addAttribute("defer_zero_eax");
     if (TargetDecl->hasAttr<SuppressMovzwlAttr>())
@@ -2562,6 +2570,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("prefer_cmp_eax_early_ret");
     if (TargetDecl->hasAttr<PreferBaseAdjustAttr>())
       FuncAttrs.addAttribute("prefer_base_adjust");
+    if (const auto *PBPL = TargetDecl->getAttr<PreferByteParamLoadAttr>())
+      FuncAttrs.addAttribute("prefer_byte_param_load", PBPL->getOffsets());
 
     if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
       AddAttributesFromFunctionProtoType(

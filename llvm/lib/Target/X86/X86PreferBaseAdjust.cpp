@@ -178,7 +178,26 @@ bool X86PreferBaseAdjustPass::runOnMachineFunction(MachineFunction &MF) {
           IsStore = true;
           Disp = getStoreDisp(MI);
         } else {
-          // Not a matching load or store - stop collecting.
+          // Not a matching load or store using BaseReg as base.
+          // Check if this instruction *defines* (writes to) BaseReg.
+          // If it only reads BaseReg (e.g. a store that uses the loaded
+          // value as its source), we can safely skip over it.
+          // Also stop on branches and calls since they change control flow.
+          if (MI.isCall() || MI.isBranch()) {
+            break;
+          }
+          bool DefinesBase = false;
+          for (const MachineOperand &MO : MI.operands()) {
+            if (MO.isReg() && MO.isDef() && MO.getReg() == BaseReg) {
+              DefinesBase = true;
+              break;
+            }
+          }
+          if (!DefinesBase) {
+            ++J;
+            continue;
+          }
+          // Defines BaseReg but is not a simple load/store from it - stop.
           break;
         }
 

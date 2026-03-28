@@ -259,6 +259,11 @@ AA::getInitialValueForObj(Attributor &A, const AbstractAttribute &QueryingAA,
     if (!Initializer)
       return nullptr;
   } else {
+    // Don't fold the initializer of externally_initialized globals - the
+    // value may be changed by code invisible to the optimizer (e.g. inline
+    // asm referencing the symbol by name). This is needed for opaque_global.
+    if (GV->isExternallyInitialized())
+      return nullptr;
     if (!GV->hasLocalLinkage() &&
         (GV->isInterposable() || !(GV->isConstant() && GV->hasInitializer())))
       return nullptr;
