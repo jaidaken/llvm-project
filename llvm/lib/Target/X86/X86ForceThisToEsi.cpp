@@ -126,10 +126,33 @@ static bool isAnyCall(const MachineInstr &MI) {
   return MI.isCall();
 }
 
+/// Check if an instruction clobbers ECX (or sub-registers CX/CL/CH).
+/// This includes explicit defs and implicit defs (e.g., CALL clobbers ECX).
+static bool clobbersEcx(const MachineInstr &MI) {
+  for (const MachineOperand &MO : MI.operands()) {
+    if (MO.isReg() && MO.isDef() &&
+        (MO.getReg() == X86::ECX || MO.getReg() == X86::CX ||
+         MO.getReg() == X86::CL || MO.getReg() == X86::CH))
+      return true;
+  }
+  // CALLs also clobber ECX via regmask.
+  if (MI.isCall()) {
+    for (const MachineOperand &MO : MI.operands()) {
+      if (MO.isRegMask() && MO.clobbersPhysReg(X86::ECX))
+        return true;
+    }
+  }
+  return false;
+}
+
 bool X86ForceThisToEsiPass::runOnMachineFunction(MachineFunction &MF) {
   const Function &Fn = MF.getFunction();
   bool UseEsi = Fn.hasFnAttribute(Attribute::ForceThisEsi);
   bool UseEdi = Fn.hasFnAttribute("force_this_edi");
+  bool LazyEsi = Fn.hasFnAttribute("force_this_esi_lazy");
+  // force_this_esi_lazy implies force_this_esi behavior.
+  if (LazyEsi)
+    UseEsi = true;
   if (!UseEsi && !UseEdi)
     return false;
 
@@ -316,6 +339,76 @@ bool X86ForceThisToEsiPass::runOnMachineFunction(MachineFunction &MF) {
       Changed = true;
       // Reset I to continue scanning.
       I = PushStart;
+    }
+  }
+
+  // Lazy mode: remove redundant MOV ECX, Target32 instructions before CALLs
+  // when ECX already holds `this` (hasn't been clobbered since function entry
+  // or since the last MOV ECX, Target32).
+  //
+  // At function entry ECX = this. A `mov esi, ecx` is inserted but doesn't
+  // change ECX. ECX remains valid until clobbered by a CALL (caller-saved)
+  // or another instruction that writes to ECX.
+  if (LazyEsi) {
+    // Compute per-block ECX-valid state using a two-pass approach.
+    // First pass: compute exit state for each block.
+    DenseMap<MachineBasicBlock *, bool> LazyBlockExitState;
+    for (MachineBasicBlock &MBB : MF) {
+      bool EcxValid = (&MBB == &MF.front());
+      if (&MBB != &MF.front())
+        EcxValid = true; // conservative default, refined in second pass
+      for (MachineInstr &MI : MBB) {
+        if (&MI == InsertedMov)
+          continue;
+        if (isMovEcxTarget(MI, Target32)) {
+          // MOV ECX, Target32 restores ECX = this.
+          EcxValid = true;
+        } else if (clobbersEcx(MI)) {
+          EcxValid = false;
+        }
+      }
+      LazyBlockExitState[&MBB] = EcxValid;
+    }
+
+    // Second pass: use predecessor exit states and remove redundant MOVs.
+    SmallVector<MachineInstr *, 8> RedundantMovs;
+    for (MachineBasicBlock &MBB : MF) {
+      bool EcxValid;
+      if (&MBB == &MF.front()) {
+        EcxValid = true; // ECX = this at function entry
+      } else {
+        // Conservative: ECX is valid only if ALL predecessors exit valid.
+        EcxValid = true;
+        for (MachineBasicBlock *Pred : MBB.predecessors()) {
+          auto It = LazyBlockExitState.find(Pred);
+          if (It != LazyBlockExitState.end() && !It->second) {
+            EcxValid = false;
+            break;
+          }
+        }
+      }
+
+      for (MachineInstr &MI : MBB) {
+        if (&MI == InsertedMov)
+          continue;
+
+        if (isMovEcxTarget(MI, Target32)) {
+          if (EcxValid) {
+            // ECX already holds `this`, this MOV is redundant.
+            RedundantMovs.push_back(&MI);
+          } else {
+            // This MOV restores ECX = this.
+            EcxValid = true;
+          }
+        } else if (clobbersEcx(MI)) {
+          EcxValid = false;
+        }
+      }
+    }
+
+    for (MachineInstr *MI : RedundantMovs) {
+      MI->eraseFromParent();
+      Changed = true;
     }
   }
 

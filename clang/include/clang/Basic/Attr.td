@@ -5130,6 +5130,13 @@ def ForceThisEdi: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def ForceThisEsiLazy: InheritableAttr {
+  let Spellings = [GNU<"force_this_esi_lazy">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def ForcedCalleeSaves: InheritableAttr {
   let Spellings = [GNU<"forced_callee_saves">];
   let Args = [StringArgument<"Registers">];
@@ -5438,6 +5445,13 @@ def NoTailMerge: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def NoBranchThreading: InheritableAttr {
+  let Spellings = [GNU<"no_branch_threading">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def CmpRev: InheritableAttr {
   let Spellings = [GNU<"cmp_rev">];
   let Subjects = SubjectList<[Function]>;
@@ -5503,6 +5517,13 @@ def FoldTestMem: InheritableAttr {
 
 def PreferCmpEaxEarlyRet: InheritableAttr {
   let Spellings = [GNU<"prefer_cmp_eax_early_ret">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferBaseAdjust: InheritableAttr {
+  let Spellings = [GNU<"prefer_base_adjust">];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
   let SimpleHandler = 1;

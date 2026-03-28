@@ -2437,6 +2437,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::ForceThisEsi);
     if (TargetDecl->hasAttr<ForceThisEdiAttr>())
       FuncAttrs.addAttribute("force_this_edi");
+    if (TargetDecl->hasAttr<ForceThisEsiLazyAttr>())
+      FuncAttrs.addAttribute("force_this_esi_lazy");
     if (TargetDecl->hasAttr<PreferFmulMemAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::PreferFmulMem);
     if (TargetDecl->hasAttr<PreferPopCleanupAttr>())
@@ -2534,6 +2536,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("prefer_rtl_push_order");
     if (TargetDecl->hasAttr<NoTailMergeAttr>())
       FuncAttrs.addAttribute("no_tail_merge");
+    if (TargetDecl->hasAttr<NoBranchThreadingAttr>())
+      FuncAttrs.addAttribute("no_branch_threading");
     if (TargetDecl->hasAttr<CmpRevAttr>())
       FuncAttrs.addAttribute("cmp_rev");
     if (TargetDecl->hasAttr<CmpLhsRegAttr>())
@@ -2556,6 +2560,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("fold_test_mem");
     if (TargetDecl->hasAttr<PreferCmpEaxEarlyRetAttr>())
       FuncAttrs.addAttribute("prefer_cmp_eax_early_ret");
+    if (TargetDecl->hasAttr<PreferBaseAdjustAttr>())
+      FuncAttrs.addAttribute("prefer_base_adjust");
 
     if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
       AddAttributesFromFunctionProtoType(
