@@ -98,9 +98,6 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
   if (!MF.getFunction().hasFnAttribute("prevent_setcc_merge"))
     return false;
 
-  fprintf(stderr, "[PreventSetccMerge] Processing function: %s\n",
-          MF.getName().str().c_str());
-
   const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();
   const X86InstrInfo *TII = STI.getInstrInfo();
   bool Changed = false;
@@ -227,9 +224,6 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
         ++I;
         continue;
       }
-
-      fprintf(stderr, "[PreventSetccMerge]   Found XOR+SETCCr pattern in BB#%d, CC=%d, InvCC=%d, %d POPs, RetInSameBlock will be checked\n",
-              MBB.getNumber(), (int)CC, (int)InvCC, (int)Pops.size());
 
       DebugLoc DL = XorMI.getDebugLoc();
 

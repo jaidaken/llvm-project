@@ -91,9 +91,6 @@ bool X86MergeReturnBlocksPass::runOnMachineFunction(MachineFunction &MF) {
   if (!MF.getFunction().hasFnAttribute("merge_return_blocks"))
     return false;
 
-  fprintf(stderr, "[MergeReturnBlocks] Processing function: %s\n",
-          MF.getName().str().c_str());
-
   bool Changed = false;
 
   // Group return blocks by their instruction sequence.
@@ -102,22 +99,14 @@ bool X86MergeReturnBlocksPass::runOnMachineFunction(MachineFunction &MF) {
     if (!endsWithReturn(MBB))
       continue;
     std::string Key = getBlockKey(MBB);
-    fprintf(stderr, "[MergeReturnBlocks]   BB#%d ends with return, key='%s' (%d instrs)\n",
-            MBB.getNumber(), Key.c_str(), (int)MBB.size());
     Groups[Key].push_back(&MBB);
   }
 
   // For each group with 2+ blocks, keep the first and redirect others.
   for (auto &KV : Groups) {
     SmallVector<MachineBasicBlock *, 4> &Blocks = KV.second;
-    if (Blocks.size() < 2) {
-      fprintf(stderr, "[MergeReturnBlocks]   Group with key='%s' has only 1 block, skipping\n",
-              KV.first.c_str());
+    if (Blocks.size() < 2)
       continue;
-    }
-
-    fprintf(stderr, "[MergeReturnBlocks]   Merging group with key='%s' (%d blocks)\n",
-            KV.first.c_str(), (int)Blocks.size());
 
     MachineBasicBlock *Canonical = Blocks[0];
 
