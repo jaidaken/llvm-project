@@ -2566,6 +2566,10 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("defer_zero_eax");
     if (TargetDecl->hasAttr<PreferFirstLoadEaxAttr>())
       FuncAttrs.addAttribute("prefer_first_load_eax");
+    if (TargetDecl->hasAttr<PreferSourceRegisterReuseAttr>())
+      FuncAttrs.addAttribute("prefer_source_register_reuse");
+    if (const auto *PNLR = TargetDecl->getAttr<PreferNthLoadRegAttr>())
+      FuncAttrs.addAttribute("prefer_nth_load_reg", PNLR->getSpec());
     if (TargetDecl->hasAttr<SuppressMovzwlAttr>())
       FuncAttrs.addAttribute("suppress_movzwl");
     if (TargetDecl->hasAttr<FoldTestMemAttr>())

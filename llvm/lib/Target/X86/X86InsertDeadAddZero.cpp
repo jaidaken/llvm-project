@@ -22,8 +22,15 @@
 // Modern compilers eliminate the dead xor+add. This pass reinserts it at merge
 // points where one predecessor has ADD32rr EAX, reg and the other does not.
 //
-// Gate: function attribute "insert_dead_add_zero" with register name value,
-//       e.g. insert_dead_add_zero("edx").
+// Gate: function attribute "insert_dead_add_zero" with a value specifying the
+// register and an optional filter separated by colon:
+//
+//   insert_dead_add_zero("edx")             - all merge points (legacy)
+//   insert_dead_add_zero("edx:non_return")  - only merge points with successors
+//   insert_dead_add_zero("edx:N")           - only the first N merge points
+//
+// The "non_return" filter matches the MSVC 6.0 pattern: dead arithmetic appears
+// at merge points that flow into more computation, not at return blocks.
 //
 //===----------------------------------------------------------------------===//
 
@@ -83,6 +90,52 @@ static bool blockHasAddEax(const MachineBasicBlock &MBB, Register ZeroReg) {
   return false;
 }
 
+/// Check if a block is a return block (contains a RET instruction).
+static bool isReturnBlock(const MachineBasicBlock &MBB) {
+  for (const MachineInstr &MI : MBB) {
+    if (MI.isReturn())
+      return true;
+  }
+  return false;
+}
+
+/// Filter mode for which merge points receive dead add insertion.
+enum class MergeFilter {
+  All,       // Insert at every qualifying merge point (legacy behavior).
+  NonReturn, // Skip merge points that are return blocks.
+  Count,     // Insert at only the first N qualifying merge points.
+};
+
+/// Parse the attribute value into register, filter mode, and count limit.
+/// Format: "reg" | "reg:non_return" | "reg:N"
+/// Returns true on success.
+static bool parseAttrValue(StringRef AttrVal, Register &ZeroReg,
+                           MergeFilter &Filter, unsigned &CountLimit) {
+  Filter = MergeFilter::All;
+  CountLimit = 0;
+
+  auto [RegPart, FilterPart] = AttrVal.split(':');
+  ZeroReg = parseRegName(RegPart);
+  if (!ZeroReg)
+    return false;
+
+  if (FilterPart.empty())
+    return true;
+
+  if (FilterPart == "non_return") {
+    Filter = MergeFilter::NonReturn;
+    return true;
+  }
+
+  // Try to parse as a count.
+  if (!FilterPart.getAsInteger(10, CountLimit) && CountLimit > 0) {
+    Filter = MergeFilter::Count;
+    return true;
+  }
+
+  return false;
+}
+
 bool X86InsertDeadAddZeroPass::runOnMachineFunction(MachineFunction &MF) {
   const Function &F = MF.getFunction();
   if (!F.hasFnAttribute("insert_dead_add_zero"))
@@ -90,18 +143,30 @@ bool X86InsertDeadAddZeroPass::runOnMachineFunction(MachineFunction &MF) {
 
   StringRef AttrVal =
       F.getFnAttribute("insert_dead_add_zero").getValueAsString();
-  Register ZeroReg = parseRegName(AttrVal);
-  if (!ZeroReg)
+
+  Register ZeroReg;
+  MergeFilter Filter;
+  unsigned CountLimit;
+  if (!parseAttrValue(AttrVal, ZeroReg, Filter, CountLimit))
     return false;
 
   const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();
   const X86InstrInfo *TII = STI.getInstrInfo();
   bool Changed = false;
+  unsigned InsertCount = 0;
 
   for (MachineBasicBlock &MBB : MF) {
     // Only look at merge points: blocks with 2+ predecessors.
     if (MBB.pred_size() < 2)
       continue;
+
+    // Apply filter: skip return blocks when using non_return mode.
+    if (Filter == MergeFilter::NonReturn && isReturnBlock(MBB))
+      continue;
+
+    // Apply filter: stop after inserting at CountLimit merge points.
+    if (Filter == MergeFilter::Count && InsertCount >= CountLimit)
+      break;
 
     // Check if any predecessor has the ADD32rr EAX, ZeroReg pattern.
     SmallVector<MachineBasicBlock *, 4> HasAdd;
@@ -141,6 +206,8 @@ bool X86InsertDeadAddZeroPass::runOnMachineFunction(MachineFunction &MF) {
                         << " before merge into " << MBB.getName() << "\n");
       Changed = true;
     }
+
+    ++InsertCount;
   }
 
   return Changed;

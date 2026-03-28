@@ -104,6 +104,7 @@ set(sources
   X86SwapCmpRegisters.cpp
   X86Msvc6RegSwap.cpp
   X86PreferFirstLoadEax.cpp
+  X86PreferNthLoadReg.cpp
   X86PreferTripCountLoop.cpp
   X86PreferEarlyBufAdvance.cpp
   X86InterleaveS2Update.cpp
@@ -127,6 +128,7 @@ set(sources
   X86UnfoldCmpMem.cpp
   X86UnfoldAluMem.cpp
   X86PreferRegisterStore.cpp
+  X86PreferSourceRegisterReuse.cpp
   X86ZeroViaXor.cpp
   X86SplitWordStores.cpp
   X86DecomposeImul.cpp

@@ -69,6 +69,7 @@ private:
   bool convertTestMemEntries(MachineFunction &MF, const X86InstrInfo *TII,
                              SmallVectorImpl<TestAhEntry> &Entries);
   bool convertTestRegImm(MachineFunction &MF, const X86InstrInfo *TII);
+  bool convertTest16rrSign(MachineFunction &MF, const X86InstrInfo *TII);
 };
 
 } // end anonymous namespace
@@ -115,6 +116,18 @@ Register X86PreferTestAhPass::getHighByteReg(Register Reg32) {
   case X86::ECX: return X86::CH;
   case X86::EDX: return X86::DH;
   case X86::EBX: return X86::BH;
+  default: return Register();
+  }
+}
+
+/// Map a 16-bit register to its high-byte sub-register.
+/// Returns Register() (invalid) for registers without a high-byte form.
+static Register getHighByteFromReg16(Register Reg16) {
+  switch (Reg16) {
+  case X86::AX: return X86::AH;
+  case X86::CX: return X86::CH;
+  case X86::DX: return X86::DH;
+  case X86::BX: return X86::BH;
   default: return Register();
   }
 }
@@ -248,6 +261,76 @@ bool X86PreferTestAhPass::convertTestRegImm(MachineFunction &MF,
   return Changed;
 }
 
+bool X86PreferTestAhPass::convertTest16rrSign(MachineFunction &MF,
+                                               const X86InstrInfo *TII) {
+  bool Changed = false;
+
+  for (MachineBasicBlock &MBB : MF) {
+    for (auto I = MBB.begin(), E = MBB.end(); I != E;) {
+      MachineInstr &MI = *I;
+
+      // Look for TEST16rr reg, reg (same register both operands).
+      if (MI.getOpcode() != X86::TEST16rr) {
+        ++I;
+        continue;
+      }
+
+      Register Reg16 = MI.getOperand(0).getReg();
+      if (Reg16 != MI.getOperand(1).getReg()) {
+        ++I;
+        continue;
+      }
+
+      // The next instruction must be JCC_1 with COND_NS or COND_S.
+      auto NextI = std::next(I);
+      if (NextI == E || NextI->getOpcode() != X86::JCC_1) {
+        ++I;
+        continue;
+      }
+
+      int64_t OldCC = NextI->getOperand(1).getImm();
+      int64_t NewCC;
+      if (OldCC == X86::COND_NS)
+        NewCC = X86::COND_E;
+      else if (OldCC == X86::COND_S)
+        NewCC = X86::COND_NE;
+      else {
+        ++I;
+        continue;
+      }
+
+      Register HighReg = getHighByteFromReg16(Reg16);
+      if (!HighReg.isValid()) {
+        ++I;
+        continue;
+      }
+
+      DebugLoc DL = MI.getDebugLoc();
+
+      LLVM_DEBUG(dbgs() << "  Converting TEST16rr + J"
+                        << (OldCC == X86::COND_NS ? "NS" : "S")
+                        << " to TEST8ri AH, 0x80 + J"
+                        << (NewCC == X86::COND_E ? "E" : "NE") << ": "
+                        << MI);
+
+      // Build: TEST8ri high_byte(reg), 0x80
+      BuildMI(MBB, MI, DL, TII->get(X86::TEST8ri))
+          .addReg(HighReg)
+          .addImm(0x80);
+
+      // Update the JCC condition code.
+      NextI->getOperand(1).setImm(NewCC);
+
+      // Erase TEST16rr; NextI (the JCC) becomes the next instruction.
+      MI.eraseFromParent();
+      I = NextI;
+      Changed = true;
+    }
+  }
+
+  return Changed;
+}
+
 bool X86PreferTestAhPass::runOnMachineFunction(MachineFunction &MF) {
   const Function &F = MF.getFunction();
   bool HasMemAttr = F.hasFnAttribute("prefer_test_ah");
@@ -270,8 +353,10 @@ bool X86PreferTestAhPass::runOnMachineFunction(MachineFunction &MF) {
   }
 
   // Handle TEST32ri -> TEST8ri (register test mode).
-  if (HasRegAttr)
+  if (HasRegAttr) {
     Changed |= convertTestRegImm(MF, TII);
+    Changed |= convertTest16rrSign(MF, TII);
+  }
 
   return Changed;
 }

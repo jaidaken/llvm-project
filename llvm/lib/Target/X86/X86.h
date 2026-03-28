@@ -306,6 +306,11 @@ FunctionPass *createX86Msvc6RegSwapPass();
 /// for loading flags into EAX.
 FunctionPass *createX86PreferFirstLoadEaxPass();
 
+/// Return a Machine IR pass that forces the Nth memory load in the entry block
+/// into a specific register, matching MSVC 6.0's register allocation choices.
+/// Controlled by the "prefer_nth_load_reg" attribute with format "2:eax,3:edx".
+FunctionPass *createX86PreferNthLoadRegPass();
+
 /// Return a Machine IR pass that rewrites add/cmp/ja loop latches to
 /// dec ebp/jne with trip count precomputation.
 FunctionPass *createX86PreferTripCountLoopPass();
@@ -406,6 +411,11 @@ FunctionPass *createX86UnfoldAluMemPass();
 /// EAX before storing (XOR for zero, MOV32ri for non-zero) for functions with
 /// the prefer_register_store attribute (MSVC 6.0 register store pattern).
 FunctionPass *createX86PreferRegisterStorePass();
+
+/// Return a Machine IR pass that reuses a dying base register as the
+/// destination of MOV32rm for functions with the prefer_source_register_reuse
+/// attribute (MSVC 6.0 register reuse pattern).
+FunctionPass *createX86PreferSourceRegisterReusePass();
 
 /// Return a Machine IR pass that converts immediate-zero stores (MOV32mi 0)
 /// into XOR+MOV32mr for functions with the zero_via_xor attribute (MSVC 6.0

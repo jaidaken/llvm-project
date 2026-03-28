@@ -5598,3 +5598,17 @@ def PreferFirstLoadEax: InheritableAttr {
   let Documentation = [Undocumented];
   let SimpleHandler = 1;
 }
+
+def PreferSourceRegisterReuse: InheritableAttr {
+  let Spellings = [GNU<"prefer_source_register_reuse">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferNthLoadReg: InheritableAttr {
+  let Spellings = [GNU<"prefer_nth_load_reg">];
+  let Args = [StringArgument<"Spec">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+}

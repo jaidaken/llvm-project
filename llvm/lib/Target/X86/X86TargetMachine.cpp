@@ -628,6 +628,7 @@ void X86PassConfig::addPreEmitPass() {
   //   that PreferXOR8 would downsize to XOR8rr).
   // - ExpandMovzx runs last (it may create XOR+MOV patterns).
   addPass(createX86SwapBufRegisterPass());
+  addPass(createX86PreferSourceRegisterReusePass());
   addPass(createX86PreferTripCountLoopPass());
   addPass(createX86PreferEarlyBufAdvancePass());
   addPass(createX86InterleaveS2UpdatePass());
@@ -649,6 +650,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86PreferNegSbbPass());
   addPass(createX86SwapCmpRegistersPass());
   addPass(createX86PreferFirstLoadEaxPass());
+  addPass(createX86PreferNthLoadRegPass());
   addPass(createX86Msvc6RegSwapPass());
   addPass(createX86PreferSeteEcxPass());
   addPass(createX86PreferFmulMemPass());
