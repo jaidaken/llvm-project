@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// bw1-decomp: Post-regalloc pass that forces the Nth memory load in the entry
-// block into a specific register.
+// bw1-decomp: Post-regalloc pass that ensures the Nth memory load in the entry
+// block produces its result in a specific register.
 //
 // MSVC 6.0 has specific register preferences for memory loads that go beyond
 // just the first load. For example:
@@ -18,7 +18,12 @@
 // format "2:eax,3:edx" meaning the 2nd load goes to EAX, the 3rd to EDX.
 //
 // For each specified Nth load, if its destination doesn't match the requested
-// register, the pass does a global register swap throughout the entire function.
+// register, the pass inserts a MOV32rr right after the load and locally
+// rewrites forward uses of the load's result to use the desired register,
+// stopping when the original register is redefined by another instruction.
+//
+// This local approach (vs. a global swap) is safe with chained loads and
+// does not conflict with forced_callee_saves PUSH/POP instructions.
 //
 // Gated on the "prefer_nth_load_reg" function attribute.
 //
@@ -31,6 +36,7 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Debug.h"
 using namespace llvm;
 
 #define DEBUG_TYPE "x86-prefer-nth-load-reg"
@@ -55,43 +61,41 @@ public:
 
 char X86PreferNthLoadRegPass::ID = 0;
 
-/// Get the 16-bit, low-8, and high-8 sub-registers for a 32-bit GPR.
-/// Returns false if the register is not a supported 32-bit GPR.
-static bool getSubRegs(unsigned Reg32, unsigned &Reg16, unsigned &RegLo,
-                       unsigned &RegHi) {
-  switch (Reg32) {
-  case X86::EAX: Reg16 = X86::AX;  RegLo = X86::AL;  RegHi = X86::AH;  return true;
-  case X86::EDX: Reg16 = X86::DX;  RegLo = X86::DL;  RegHi = X86::DH;  return true;
-  case X86::ECX: Reg16 = X86::CX;  RegLo = X86::CL;  RegHi = X86::CH;  return true;
-  case X86::EBX: Reg16 = X86::BX;  RegLo = X86::BL;  RegHi = X86::BH;  return true;
-  case X86::ESI: Reg16 = X86::SI;  RegLo = X86::SIL; RegHi = 0;        return true;
-  case X86::EDI: Reg16 = X86::DI;  RegLo = X86::DIL; RegHi = 0;        return true;
-  case X86::EBP: Reg16 = X86::BP;  RegLo = X86::BPL; RegHi = 0;        return true;
-  default: return false;
-  }
-}
+/// Map a register from OldReg32's family to NewReg32's family.
+/// For example, if OldReg32=EAX, NewReg32=EDX, then AL -> DL, AX -> DX, etc.
+/// Returns 0 if the register doesn't belong to OldReg32's family.
+static unsigned mapRegToFamily(unsigned Reg, unsigned OldReg32,
+                               unsigned NewReg32) {
+  if (Reg == OldReg32)
+    return NewReg32;
 
-/// Swap register Reg between the OldReg32 family and the NewReg32 family.
-/// Handles 32-bit, 16-bit, and 8-bit sub-register variants.
-/// Returns Reg unchanged if it belongs to neither family.
-static unsigned swapReg(unsigned Reg, unsigned OldReg32, unsigned NewReg32) {
-  if (Reg == OldReg32) return NewReg32;
-  if (Reg == NewReg32) return OldReg32;
+  // Build sub-register tables for both families.
+  struct RegFamily {
+    unsigned R32, R16, RLo, RHi;
+  };
+  auto getFamily = [](unsigned R32) -> RegFamily {
+    switch (R32) {
+    case X86::EAX: return {X86::EAX, X86::AX, X86::AL, X86::AH};
+    case X86::EDX: return {X86::EDX, X86::DX, X86::DL, X86::DH};
+    case X86::ECX: return {X86::ECX, X86::CX, X86::CL, X86::CH};
+    case X86::EBX: return {X86::EBX, X86::BX, X86::BL, X86::BH};
+    case X86::ESI: return {X86::ESI, X86::SI, X86::SIL, 0};
+    case X86::EDI: return {X86::EDI, X86::DI, X86::DIL, 0};
+    case X86::EBP: return {X86::EBP, X86::BP, X86::BPL, 0};
+    default: return {0, 0, 0, 0};
+    }
+  };
 
-  unsigned Old16, OldLo, OldHi;
-  unsigned New16, NewLo, NewHi;
-  if (!getSubRegs(OldReg32, Old16, OldLo, OldHi) ||
-      !getSubRegs(NewReg32, New16, NewLo, NewHi))
-    return Reg;
+  RegFamily Old = getFamily(OldReg32);
+  RegFamily New = getFamily(NewReg32);
+  if (Old.R32 == 0 || New.R32 == 0)
+    return 0;
 
-  if (Reg == Old16) return New16;
-  if (Reg == New16) return Old16;
-  if (Reg == OldLo) return NewLo;
-  if (Reg == NewLo) return OldLo;
-  if (OldHi && Reg == OldHi) return NewHi ? NewHi : Reg;
-  if (NewHi && Reg == NewHi) return OldHi ? OldHi : Reg;
+  if (Reg == Old.R16) return New.R16;
+  if (Reg == Old.RLo) return New.RLo;
+  if (Old.RHi && Reg == Old.RHi) return New.RHi ? New.RHi : 0;
 
-  return Reg;
+  return 0;
 }
 
 /// Parse a register name string to an X86 32-bit register.
@@ -129,6 +133,28 @@ static bool parseSpec(StringRef Spec,
   return !Entries.empty();
 }
 
+/// Check if an instruction is a prologue/epilogue PUSH/POP from
+/// forced_callee_saves. These have FrameSetup or FrameDestroy flags.
+static bool isPrologueEpilogue(const MachineInstr &MI) {
+  return MI.getFlag(MachineInstr::FrameSetup) ||
+         MI.getFlag(MachineInstr::FrameDestroy);
+}
+
+/// Check if the instruction defines (writes to) a register that overlaps
+/// with the given 32-bit register.
+static bool definesReg(const MachineInstr &MI, unsigned Reg32,
+                       const TargetRegisterInfo *TRI) {
+  for (const MachineOperand &MO : MI.operands()) {
+    if (MO.isReg() && MO.isDef() && MO.getReg() != 0 &&
+        TRI->regsOverlap(MO.getReg(), Reg32))
+      return true;
+  }
+  // Also check implicit defs.
+  if (MI.getDesc().hasImplicitDefOfPhysReg(Reg32, TRI))
+    return true;
+  return false;
+}
+
 bool X86PreferNthLoadRegPass::runOnMachineFunction(MachineFunction &MF) {
   Attribute Attr =
       MF.getFunction().getFnAttribute("prefer_nth_load_reg");
@@ -140,6 +166,9 @@ bool X86PreferNthLoadRegPass::runOnMachineFunction(MachineFunction &MF) {
   if (!parseSpec(Spec, Entries))
     return false;
 
+  const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();
+  const X86InstrInfo *TII = STI.getInstrInfo();
+  const TargetRegisterInfo *TRI = STI.getRegisterInfo();
   MachineBasicBlock &EntryMBB = MF.front();
 
   // Collect all MOV32rm instructions in entry block order.
@@ -151,10 +180,6 @@ bool X86PreferNthLoadRegPass::runOnMachineFunction(MachineFunction &MF) {
       Loads.push_back(&MI);
   }
 
-  // Process each entry. Apply swaps in order of ascending N so that earlier
-  // swaps don't interfere with later load identification (we track loads by
-  // position, and a global swap doesn't change instruction order).
-  //
   // Sort entries by N to process in order.
   llvm::sort(Entries, [](const auto &A, const auto &B) {
     return A.first < B.first;
@@ -167,30 +192,51 @@ bool X86PreferNthLoadRegPass::runOnMachineFunction(MachineFunction &MF) {
       continue;
 
     MachineInstr *LoadMI = Loads[N - 1];
-    Register CurReg = LoadMI->getOperand(0).getReg();
+    Register ActualDest = LoadMI->getOperand(0).getReg();
 
-    if (CurReg == DesiredReg)
+    if (ActualDest == DesiredReg)
       continue; // Already in the right register.
 
-    // Swap CurReg <-> DesiredReg throughout the entire function.
-    for (MachineBasicBlock &MBB : MF) {
-      for (MachineInstr &MI : MBB) {
-        for (MachineOperand &MO : MI.operands()) {
-          if (!MO.isReg())
-            continue;
-          unsigned NewReg = swapReg(MO.getReg(), CurReg, DesiredReg);
-          if (NewReg != MO.getReg()) {
-            MO.setReg(NewReg);
-            Changed = true;
-          }
+    LLVM_DEBUG(dbgs() << "PreferNthLoadReg: load #" << N << " in "
+                      << MF.getName() << ": " << printReg(ActualDest, TRI)
+                      << " -> " << printReg(DesiredReg, TRI) << "\n");
+
+    // Insert MOV32rr DesiredReg, ActualDest right after the load.
+    auto InsertPt = std::next(MachineBasicBlock::iterator(LoadMI));
+    BuildMI(EntryMBB, InsertPt, LoadMI->getDebugLoc(),
+            TII->get(X86::MOV32rr), DesiredReg)
+        .addReg(ActualDest);
+
+    // Walk forward from the insertion point through the entry block and
+    // rewrite uses of ActualDest to DesiredReg. Stop when ActualDest is
+    // redefined by another instruction (meaning a new value is written).
+    for (auto It = InsertPt, E = EntryMBB.end(); It != E; ++It) {
+      MachineInstr &MI = *It;
+
+      // Skip prologue/epilogue PUSH/POP from forced_callee_saves.
+      if (isPrologueEpilogue(MI))
+        continue;
+
+      // If this instruction redefines ActualDest, stop rewriting.
+      // The register now holds a different value.
+      if (definesReg(MI, ActualDest, TRI))
+        break;
+
+      // Rewrite uses of ActualDest (and its sub-registers) to DesiredReg.
+      for (MachineOperand &MO : MI.operands()) {
+        if (!MO.isReg() || MO.getReg() == 0)
+          continue;
+        if (!MO.isUse())
+          continue;
+        unsigned Mapped = mapRegToFamily(MO.getReg(), ActualDest, DesiredReg);
+        if (Mapped != 0) {
+          MO.setReg(Mapped);
+          Changed = true;
         }
       }
     }
 
-    // Update the Loads vector: the swap changed registers globally, so any
-    // load that was targeting DesiredReg is now targeting CurReg, and vice
-    // versa. We need to keep the Loads vector accurate for subsequent entries.
-    // (The instruction pointers are still valid - only register operands changed.)
+    Changed = true;
   }
 
   return Changed;
