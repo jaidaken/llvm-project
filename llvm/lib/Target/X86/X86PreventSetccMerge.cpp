@@ -16,16 +16,17 @@
 //   mov eax, 1          ; return 1
 //   ret
 //
-// Clang merges these into an xor+setcc pattern (pre-zeroes EAX with XOR):
+// Clang merges these into an xor+setcc pattern (pre-zeroes reg with XOR):
 //
 //   test eax, eax
 //   xor eax, eax
 //   setne al            ; return 0 or 1
 //   ret
 //
-// This pass detects XOR32rr/XOR32rr_REV EAX,EAX + SETCCr AL + RET sequences
-// and replaces them with the branch-based form, gated on the
-// prevent_setcc_merge function attribute.
+// This pass detects XOR32rr/XOR32rr_REV reg,reg + SETCCr reg8 + RET sequences
+// (where reg8 is the low byte of reg, e.g. EAX/AL, EDX/DL, ECX/CL) and
+// replaces them with the branch-based form, gated on the prevent_setcc_merge
+// function attribute.
 //
 // Pattern 2: Multi-comparison AND pattern.
 //
@@ -54,6 +55,7 @@
 #include "X86.h"
 #include "X86InstrInfo.h"
 #include "X86Subtarget.h"
+#include "MCTargetDesc/X86MCTargetDesc.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
@@ -206,13 +208,12 @@ static bool tryTransformMultiSetccAnd(MachineBasicBlock &MBB,
         (AndSrc1 == Set2Reg && AndSrc2 == Set1Reg)))
     return false;
 
-  // Step 4: Expect MOVZX32rr8 extending the AND result to EAX.
+  // Step 4: Expect MOVZX32rr8 extending the AND result to a 32-bit register.
   It = skipNonReal(std::next(AndI), E);
   if (It == E || It->getOpcode() != X86::MOVZX32rr8)
     return false;
   auto MovzxI = It;
-  if (MovzxI->getOperand(0).getReg() != X86::EAX)
-    return false;
+  Register RetReg32 = MovzxI->getOperand(0).getReg();
   if (MovzxI->getOperand(1).getReg() != AndDst)
     return false;
 
@@ -273,13 +274,13 @@ static bool tryTransformMultiSetccAnd(MachineBasicBlock &MBB,
       .addMBB(TrueMBB)
       .addImm(CC2);
 
-  // False path: XOR EAX, EAX (return 0) in the current block.
+  // False path: XOR reg, reg (return 0) in the current block.
   // Insert before the AND instruction position (which we are about to erase).
   // Use the insertion point just after the second JCC we added.
   MachineInstr *InsertBefore = &*AndI;
-  BuildMI(MBB, *InsertBefore, DL, TII->get(X86::XOR32rr), X86::EAX)
-      .addReg(X86::EAX, RegState::Undef)
-      .addReg(X86::EAX, RegState::Undef);
+  BuildMI(MBB, *InsertBefore, DL, TII->get(X86::XOR32rr), RetReg32)
+      .addReg(RetReg32, RegState::Undef)
+      .addReg(RetReg32, RegState::Undef);
 
   // Clone the POPs for the false path.
   for (MachineInstr *PopMI : Pops) {
@@ -293,8 +294,8 @@ static bool tryTransformMultiSetccAnd(MachineBasicBlock &MBB,
     MBB.insert(InsertBefore, FalseRet);
   }
 
-  // Build the true block: MOV EAX, 1; [POPs]; RET.
-  BuildMI(*TrueMBB, TrueMBB->end(), DL, TII->get(X86::MOV32ri), X86::EAX)
+  // Build the true block: MOV reg, 1; [POPs]; RET.
+  BuildMI(*TrueMBB, TrueMBB->end(), DL, TII->get(X86::MOV32ri), RetReg32)
       .addImm(1);
 
   for (MachineInstr *PopMI : Pops) {
@@ -361,7 +362,7 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
     for (auto I = MBB.begin(), E = MBB.end(); I != E; ) {
       MachineInstr &XorMI = *I;
 
-      // Step 1: Look for XOR32rr/XOR32rr_REV EAX, EAX
+      // Step 1: Look for XOR32rr/XOR32rr_REV reg, reg (self-XOR zeroing idiom)
       if (XorMI.getOpcode() != X86::XOR32rr &&
           XorMI.getOpcode() != X86::XOR32rr_REV) {
         ++I;
@@ -374,18 +375,17 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
         continue;
       }
 
-      // Destination must be EAX.
-      if (XorMI.getOperand(0).getReg() != X86::EAX) {
-        ++I;
-        continue;
-      }
+      // Capture the 32-bit register being zeroed and derive its low byte.
+      Register XorReg32 = XorMI.getOperand(0).getReg();
+      Register XorReg8 = getX86SubSuperRegister(XorReg32, 8);
 
       unsigned XorOpcode = XorMI.getOpcode();
 
       // Step 1b: Check if there is a MOV32rr/MOV32rr_REV before the XOR that
-      // saves EAX to a scratch register. This happens when the compiler saves
-      // the call result to another register before zeroing EAX for setcc.
-      // Pattern: MOV32rr TmpReg, EAX; XOR EAX,EAX; TEST TmpReg,TmpReg; SETCC AL
+      // saves the return register to a scratch register. This happens when the
+      // compiler saves the call result to another register before zeroing
+      // the return register for setcc.
+      // Pattern: MOV32rr TmpReg, Reg; XOR Reg,Reg; TEST TmpReg,TmpReg; SETCC reg8
       MachineInstr *DeadMov = nullptr;
       Register TmpReg;
       if (I != MBB.begin()) {
@@ -395,7 +395,7 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
           --PrevI;
         if ((PrevI->getOpcode() == X86::MOV32rr ||
              PrevI->getOpcode() == X86::MOV32rr_REV) &&
-            PrevI->getOperand(1).getReg() == X86::EAX) {
+            PrevI->getOperand(1).getReg() == XorReg32) {
           DeadMov = &*PrevI;
           TmpReg = PrevI->getOperand(0).getReg();
         }
@@ -420,7 +420,7 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
         continue;
       }
 
-      if (SetI->getOperand(0).getReg() != X86::AL) {
+      if (SetI->getOperand(0).getReg() != XorReg8) {
         ++I;
         continue;
       }
@@ -500,7 +500,7 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
       BuildMI(MBB, *InsertBefore, DL, TII->get(X86::JCC_1))
           .addMBB(FalseMBB)
           .addImm(InvCC);
-      BuildMI(MBB, *InsertBefore, DL, TII->get(X86::MOV32ri), X86::EAX)
+      BuildMI(MBB, *InsertBefore, DL, TII->get(X86::MOV32ri), XorReg32)
           .addImm(1);
 
       // Clone the POPs for the true path (callee-save restores).
@@ -518,12 +518,12 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
         MBB.insert(InsertBefore, TrueRet);
       }
 
-      // Build in false block: XOR EAX, EAX using the same encoding (REV or
+      // Build in false block: XOR reg, reg using the same encoding (REV or
       // not) as the original.
       BuildMI(*FalseMBB, FalseMBB->end(), DL,
-              TII->get(XorOpcode), X86::EAX)
-          .addReg(X86::EAX, RegState::Undef)
-          .addReg(X86::EAX, RegState::Undef);
+              TII->get(XorOpcode), XorReg32)
+          .addReg(XorReg32, RegState::Undef)
+          .addReg(XorReg32, RegState::Undef);
 
       // Clone the POPs for the false path (callee-save restores).
       for (MachineInstr *PopMI : Pops) {
@@ -550,8 +550,8 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
       XorMI.eraseFromParent();
 
       // Step 5: Clean up dead MOV if present. If the flag setter tests
-      // TmpReg (e.g. TEST ECX,ECX) and we have MOV TmpReg, EAX before,
-      // rewrite the flag setter to use EAX directly and remove the MOV.
+      // TmpReg (e.g. TEST ECX,ECX) and we have MOV TmpReg, Reg before,
+      // rewrite the flag setter to use Reg directly and remove the MOV.
       if (DeadMov && HasFlagSetter && TmpReg != X86::NoRegister) {
         bool UsesTmpReg = false;
         for (unsigned i = 0, e = FlagSetI->getNumOperands(); i < e; ++i) {
@@ -565,7 +565,7 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
           for (unsigned i = 0, e = FlagSetI->getNumOperands(); i < e; ++i) {
             MachineOperand &MO = FlagSetI->getOperand(i);
             if (MO.isReg() && MO.getReg() == TmpReg)
-              MO.setReg(X86::EAX);
+              MO.setReg(XorReg32);
           }
           DeadMov->eraseFromParent();
         }
