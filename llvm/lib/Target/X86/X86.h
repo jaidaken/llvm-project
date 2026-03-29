@@ -244,6 +244,11 @@ FunctionPass *createX86DeferReturnValuePass();
 /// Return a Machine IR pass that sinks XOR32rr EAX, EAX from early in the
 /// function to just before the first EAX use for functions with defer_zero_eax.
 FunctionPass *createX86DeferZeroEaxPass();
+
+/// Return a Machine IR pass that swaps EAX with the first-load register when
+/// the register allocator pre-materialized XOR EAX,EAX for a return-0 path,
+/// forcing the first load into a non-EAX register.
+FunctionPass *createX86SwapEaxZeroPass();
 FunctionPass *createX86InterleaveEcxRestorePass();
 FunctionPass *createX86InterleavePushBeforeBranchPass();
 FunctionPass *createX86PreferBatchPushPass();

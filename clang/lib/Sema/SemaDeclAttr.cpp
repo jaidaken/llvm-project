@@ -2961,6 +2961,15 @@ static void handlePreferTestAhAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   D->addAttr(::new (S.Context) PreferTestAhAttr(S.Context, AL, Str));
 }
 
+static void handlePreventSetccMergeAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  StringRef Str;
+  if (AL.getNumArgs() > 0) {
+    if (!S.checkStringLiteralArgumentAttr(AL, 0, Str))
+      return;
+  }
+  D->addAttr(::new (S.Context) PreventSetccMergeAttr(S.Context, AL, Str));
+}
+
 static void handleInsertDeadAddZeroAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   StringRef Str;
   if (!S.checkStringLiteralArgumentAttr(AL, 0, Str))
@@ -7043,6 +7052,9 @@ ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D, const ParsedAttr &AL,
     break;
   case ParsedAttr::AT_PreferTestAh:
     handlePreferTestAhAttr(S, D, AL);
+    break;
+  case ParsedAttr::AT_PreventSetccMerge:
+    handlePreventSetccMergeAttr(S, D, AL);
     break;
   case ParsedAttr::AT_InsertDeadAddZero:
     handleInsertDeadAddZeroAttr(S, D, AL);

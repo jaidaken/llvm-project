@@ -131,6 +131,7 @@ set(sources
   X86PreferSourceRegisterReuse.cpp
   X86ZeroViaXor.cpp
   X86SplitWordStores.cpp
+  X86SwapEaxZero.cpp
   X86DecomposeImul.cpp
   X86LeaChainGlobalFold.cpp
   X86FastISel.cpp

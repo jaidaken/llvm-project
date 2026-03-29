@@ -559,6 +559,16 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
   const X86InstrInfo *TII = STI.getInstrInfo();
   bool Changed = false;
 
+  // Check if the "invert" mode is requested. In invert mode, Pattern 1
+  // produces: JCC TrueMBB, CC; XOR EAX,EAX; RET (false fall-through)
+  // instead of: JCC FalseMBB, InvCC; MOV EAX,1; RET (true fall-through)
+  StringRef Mode;
+  if (MF.getFunction().hasFnAttribute("prevent_setcc_merge")) {
+    Attribute A = MF.getFunction().getFnAttribute("prevent_setcc_merge");
+    Mode = A.getValueAsString();
+  }
+  bool InvertLayout = Mode == "invert";
+
   // Pattern 2: Multi-comparison AND pattern.
   // Scan each block for SETCCr + SETCCr + AND8rr + MOVZX + RET sequences.
   // This runs first because it is more specific; Pattern 1 (single XOR+SETCCr)
@@ -707,84 +717,138 @@ bool X86PreventSetccMergePass::runOnMachineFunction(MachineFunction &MF) {
 
       // Step 4: We have the pattern:
       //   XOR32rr EAX, EAX; [TEST/CMP]; SETCCr AL, CC; [POPs]; RET
-      // Replace with:
+      //
+      // Normal layout (InvertLayout == false):
       //   TEST/CMP                   -- flag-setter (if present) stays
       //   Jcc .false, inverted(CC)   -- jump to false path if CC does NOT hold
-      //   MOV32ri EAX, 1             -- true path
-      //   [POPs]                     -- callee-save restores (cloned)
-      //   RET                        -- true path return
+      //   MOV32ri EAX, 1             -- true path (fall-through)
+      //   [POPs]
+      //   RET
       //   .false:
-      //   XOR32rr EAX, EAX           -- false path (preserving original encoding)
-      //   [POPs]                     -- callee-save restores (cloned)
-      //   RET                        -- false path return
-
-      X86::CondCode InvCC = invertCC(CC);
-      if (InvCC == X86::COND_INVALID) {
-        ++I;
-        continue;
-      }
+      //   XOR32rr EAX, EAX           -- false path (branch target)
+      //   [POPs]
+      //   RET
+      //
+      // Inverted layout (InvertLayout == true):
+      //   TEST/CMP                   -- flag-setter (if present) stays
+      //   Jcc .true, CC              -- jump to true path if CC holds
+      //   XOR32rr EAX, EAX           -- false path (fall-through)
+      //   [POPs]
+      //   RET
+      //   .true:
+      //   MOV32ri EAX, 1             -- true path (branch target)
+      //   [POPs]
+      //   RET
 
       DebugLoc DL = XorMI.getDebugLoc();
-
-      // Create the "false" block after the current block.
-      MachineBasicBlock *FalseMBB = MF.CreateMachineBasicBlock();
-      FalseMBB->setLabelMustBeEmitted();
-      MF.insert(std::next(MachineFunction::iterator(&MBB)), FalseMBB);
-
-      // Insert before the SETCCr. The flag-setting instruction (TEST/CMP),
-      // if present, remains in place before the Jcc so that EFLAGS are set
-      // for the branch. The XOR is removed from the main block and placed
-      // only in the false path.
-      //   [TEST/CMP]                 -- stays (already here)
-      //   JCC_1 FalseMBB, inverted(CC)
-      //   MOV32ri EAX, 1
-      //   RET (cloned)
       MachineInstr *InsertBefore = &*SetI;
 
-      BuildMI(MBB, *InsertBefore, DL, TII->get(X86::JCC_1))
-          .addMBB(FalseMBB)
-          .addImm(InvCC);
-      BuildMI(MBB, *InsertBefore, DL, TII->get(X86::MOV32ri), XorReg32)
-          .addImm(1);
+      if (InvertLayout) {
+        // Inverted layout: false path is fall-through, true path is branch
+        // target. Branch on the original CC (not inverted) to the true block.
+        MachineBasicBlock *TrueMBB = MF.CreateMachineBasicBlock();
+        TrueMBB->setLabelMustBeEmitted();
+        MF.insert(std::next(MachineFunction::iterator(&MBB)), TrueMBB);
 
-      // Clone the POPs for the true path (callee-save restores).
-      // Use CloneMachineInstr to avoid duplicating implicit operands
-      // (BuildMI adds implicits from MCInstrDesc, then copying all
-      // operands from the original would double them).
-      for (MachineInstr *PopMI : Pops) {
-        MachineInstr *Clone = MF.CloneMachineInstr(PopMI);
-        MBB.insert(InsertBefore, Clone);
-      }
+        // JCC to true block using original CC.
+        BuildMI(MBB, *InsertBefore, DL, TII->get(X86::JCC_1))
+            .addMBB(TrueMBB)
+            .addImm(CC);
 
-      // Clone the RET for the true path.
-      {
-        MachineInstr *TrueRet = MF.CloneMachineInstr(&*RetI);
-        MBB.insert(InsertBefore, TrueRet);
-      }
+        // False path (fall-through): XOR reg, reg.
+        BuildMI(MBB, *InsertBefore, DL,
+                TII->get(XorOpcode), XorReg32)
+            .addReg(XorReg32, RegState::Undef)
+            .addReg(XorReg32, RegState::Undef);
 
-      // Build in false block: XOR reg, reg using the same encoding (REV or
-      // not) as the original.
-      BuildMI(*FalseMBB, FalseMBB->end(), DL,
-              TII->get(XorOpcode), XorReg32)
-          .addReg(XorReg32, RegState::Undef)
-          .addReg(XorReg32, RegState::Undef);
+        // Clone POPs for false path.
+        for (MachineInstr *PopMI : Pops) {
+          MachineInstr *Clone = MF.CloneMachineInstr(PopMI);
+          MBB.insert(InsertBefore, Clone);
+        }
 
-      // Clone the POPs for the false path (callee-save restores).
-      for (MachineInstr *PopMI : Pops) {
-        MachineInstr *Clone = MF.CloneMachineInstr(PopMI);
-        FalseMBB->insert(FalseMBB->end(), Clone);
-      }
+        // Clone RET for false path.
+        {
+          MachineInstr *FalseRet = MF.CloneMachineInstr(&*RetI);
+          MBB.insert(InsertBefore, FalseRet);
+        }
 
-      // Transfer successors from MBB to FalseMBB and wire up.
-      FalseMBB->transferSuccessorsAndUpdatePHIs(&MBB);
-      MBB.addSuccessor(FalseMBB);
+        // True block: MOV reg, 1.
+        BuildMI(*TrueMBB, TrueMBB->end(), DL, TII->get(X86::MOV32ri),
+                XorReg32)
+            .addImm(1);
 
-      // Move or clone the RET into the false block.
-      if (RetInSameBlock) {
-        FalseMBB->splice(FalseMBB->end(), &MBB, RetI, MBB.end());
+        // Clone POPs for true path.
+        for (MachineInstr *PopMI : Pops) {
+          MachineInstr *Clone = MF.CloneMachineInstr(PopMI);
+          TrueMBB->insert(TrueMBB->end(), Clone);
+        }
+
+        // Transfer successors and wire up.
+        TrueMBB->transferSuccessorsAndUpdatePHIs(&MBB);
+        MBB.addSuccessor(TrueMBB);
+
+        // Move or clone RET into true block.
+        if (RetInSameBlock) {
+          TrueMBB->splice(TrueMBB->end(), &MBB, RetI, MBB.end());
+        } else {
+          MachineInstr *ClonedRet = MF.CloneMachineInstr(&*RetI);
+          TrueMBB->insert(TrueMBB->end(), ClonedRet);
+        }
       } else {
-        MachineInstr *ClonedRet = MF.CloneMachineInstr(&*RetI);
-        FalseMBB->insert(FalseMBB->end(), ClonedRet);
+        // Normal layout: true path is fall-through, false path is branch
+        // target. Branch on the inverted CC to the false block.
+        X86::CondCode InvCC = invertCC(CC);
+        if (InvCC == X86::COND_INVALID) {
+          ++I;
+          continue;
+        }
+
+        MachineBasicBlock *FalseMBB = MF.CreateMachineBasicBlock();
+        FalseMBB->setLabelMustBeEmitted();
+        MF.insert(std::next(MachineFunction::iterator(&MBB)), FalseMBB);
+
+        BuildMI(MBB, *InsertBefore, DL, TII->get(X86::JCC_1))
+            .addMBB(FalseMBB)
+            .addImm(InvCC);
+        BuildMI(MBB, *InsertBefore, DL, TII->get(X86::MOV32ri), XorReg32)
+            .addImm(1);
+
+        // Clone POPs for true path.
+        for (MachineInstr *PopMI : Pops) {
+          MachineInstr *Clone = MF.CloneMachineInstr(PopMI);
+          MBB.insert(InsertBefore, Clone);
+        }
+
+        // Clone RET for true path.
+        {
+          MachineInstr *TrueRet = MF.CloneMachineInstr(&*RetI);
+          MBB.insert(InsertBefore, TrueRet);
+        }
+
+        // False block: XOR reg, reg.
+        BuildMI(*FalseMBB, FalseMBB->end(), DL,
+                TII->get(XorOpcode), XorReg32)
+            .addReg(XorReg32, RegState::Undef)
+            .addReg(XorReg32, RegState::Undef);
+
+        // Clone POPs for false path.
+        for (MachineInstr *PopMI : Pops) {
+          MachineInstr *Clone = MF.CloneMachineInstr(PopMI);
+          FalseMBB->insert(FalseMBB->end(), Clone);
+        }
+
+        // Transfer successors and wire up.
+        FalseMBB->transferSuccessorsAndUpdatePHIs(&MBB);
+        MBB.addSuccessor(FalseMBB);
+
+        // Move or clone RET into false block.
+        if (RetInSameBlock) {
+          FalseMBB->splice(FalseMBB->end(), &MBB, RetI, MBB.end());
+        } else {
+          MachineInstr *ClonedRet = MF.CloneMachineInstr(&*RetI);
+          FalseMBB->insert(FalseMBB->end(), ClonedRet);
+        }
       }
 
       // Remove the old XOR, SETCCr, and POP instructions.

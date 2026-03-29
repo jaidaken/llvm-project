@@ -2540,8 +2540,12 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("lea_chain_global_fold");
     if (TargetDecl->hasAttr<PreferDirectEcxLoadAttr>())
       FuncAttrs.addAttribute("prefer_direct_ecx_load");
-    if (TargetDecl->hasAttr<PreventSetccMergeAttr>()) {
-      FuncAttrs.addAttribute("prevent_setcc_merge");
+    if (const auto *PSM = TargetDecl->getAttr<PreventSetccMergeAttr>()) {
+      StringRef Mode = PSM->getMode();
+      if (Mode.empty())
+        FuncAttrs.addAttribute("prevent_setcc_merge");
+      else
+        FuncAttrs.addAttribute("prevent_setcc_merge", Mode);
       FuncAttrs.addAttribute("merge_return_blocks");
     }
     if (TargetDecl->hasAttr<DuplicateEcxRestoreAttr>())
@@ -2570,6 +2574,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("prefer_test_ah_reg");
     if (TargetDecl->hasAttr<DeferZeroEaxAttr>())
       FuncAttrs.addAttribute("defer_zero_eax");
+    if (TargetDecl->hasAttr<SwapEaxZeroAttr>())
+      FuncAttrs.addAttribute("swap_eax_zero");
     if (TargetDecl->hasAttr<PreferFirstLoadEaxAttr>())
       FuncAttrs.addAttribute("prefer_first_load_eax");
     if (TargetDecl->hasAttr<PreferSourceRegisterReuseAttr>())

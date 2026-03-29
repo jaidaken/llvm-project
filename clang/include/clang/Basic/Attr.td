@@ -5468,9 +5468,9 @@ def PreferDirectEcxLoad: InheritableAttr {
 
 def PreventSetccMerge: InheritableAttr {
   let Spellings = [GNU<"prevent_setcc_merge">];
+  let Args = [StringArgument<"Mode", /*optional=*/1>];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
-  let SimpleHandler = 1;
 }
 
 def DuplicateEcxRestore: InheritableAttr {
@@ -5538,6 +5538,13 @@ def PreferTestAhReg: InheritableAttr {
 
 def DeferZeroEax: InheritableAttr {
   let Spellings = [GNU<"defer_zero_eax">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def SwapEaxZero: InheritableAttr {
+  let Spellings = [GNU<"swap_eax_zero">];
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
   let SimpleHandler = 1;

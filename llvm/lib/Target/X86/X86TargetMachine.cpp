@@ -649,6 +649,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86Prefer8BitOpsPass());
   addPass(createX86PreferNegSbbPass());
   addPass(createX86SwapCmpRegistersPass());
+  addPass(createX86SwapEaxZeroPass());
   addPass(createX86PreferFirstLoadEaxPass());
   addPass(createX86PreferNthLoadRegPass());
   addPass(createX86Msvc6RegSwapPass());
