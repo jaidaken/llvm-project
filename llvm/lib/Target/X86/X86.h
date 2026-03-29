@@ -432,6 +432,23 @@ FunctionPass *createX86ZeroViaXorPass();
 /// (MSVC 6.0 emitted adjacent word stores that the compiler merged).
 FunctionPass *createX86SplitWordStoresPass();
 
+/// Return a Machine IR pass that rewrites the 2nd vtable reload from EAX to
+/// EDX after a thiscall vtable call, matching MSVC 6.0's register choice.
+FunctionPass *createX86PreferSecondVtableEdxPass();
+
+/// Return a Machine IR pass that moves MOV32ri EAX, imm from before the
+/// first epilogue POP to after the Nth POP, matching MSVC 6.0's interleaved
+/// epilogue pattern. Controlled by "epilogue_pop_interleave" attribute.
+FunctionPass *createX86EpiloguePopInterleavePass();
+
+/// Return a Machine IR pass that swaps two consecutive MOV32rm loads before
+/// a CMP32rr so the first source operand is loaded first, matching MSVC 6.0.
+FunctionPass *createX86PreferFirstMemLoadOrderPass();
+
+/// Return a Machine IR pass that converts CMP32rm reg, [ESP+disp] to
+/// CMP32mr [ESP+disp], reg and flips following Jcc condition codes.
+FunctionPass *createX86PreferStackCmpLhsPass();
+
 /// This pass converts X86 cmov instructions into branch when profitable.
 FunctionPass *createX86CmovConverterPass();
 

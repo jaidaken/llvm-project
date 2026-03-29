@@ -131,6 +131,10 @@ set(sources
   X86PreferSourceRegisterReuse.cpp
   X86ZeroViaXor.cpp
   X86SplitWordStores.cpp
+  X86PreferSecondVtableEdx.cpp
+  X86EpiloguePopInterleave.cpp
+  X86PreferFirstMemLoadOrder.cpp
+  X86PreferStackCmpLhs.cpp
   X86SwapEaxZero.cpp
   X86DecomposeImul.cpp
   X86LeaChainGlobalFold.cpp
