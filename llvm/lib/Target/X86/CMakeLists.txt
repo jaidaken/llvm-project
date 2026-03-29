@@ -78,6 +78,7 @@ set(sources
   X86PreferThiscallReorder.cpp
   X86PreferDirectEcxLoad.cpp
   X86PreferPushBeforeEcx.cpp
+  X86DeferRetEaxAlloc.cpp
   X86DeferReturnValue.cpp
   X86DeferZeroEax.cpp
   X86DuplicateEcxRestore.cpp

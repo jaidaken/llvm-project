@@ -550,6 +550,11 @@ bool X86PassConfig::addPreISel() {
 }
 
 void X86PassConfig::addPreRegAlloc() {
+  // bw1-decomp: Run the defer_ret_eax_alloc analysis before the register
+  // allocator so getRegAllocationHints can steer return-value vregs away
+  // from EAX.
+  addPass(createX86DeferRetEaxAllocPass());
+
   if (getOptLevel() != CodeGenOptLevel::None) {
     addPass(&LiveRangeShrinkID);
     addPass(createX86WinFixupBufferSecurityCheckPass());

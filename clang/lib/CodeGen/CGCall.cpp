@@ -2576,6 +2576,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("prefer_test_ah_reg");
     if (TargetDecl->hasAttr<DeferZeroEaxAttr>())
       FuncAttrs.addAttribute("defer_zero_eax");
+    if (TargetDecl->hasAttr<DeferRetEaxAllocAttr>())
+      FuncAttrs.addAttribute("defer_ret_eax_alloc");
     if (TargetDecl->hasAttr<SwapEaxZeroAttr>())
       FuncAttrs.addAttribute("swap_eax_zero");
     if (TargetDecl->hasAttr<PreferFirstLoadEaxAttr>())

@@ -1279,6 +1279,26 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
     }
   }
 
+  // bw1-decomp: defer_ret_eax_alloc - steer return-value vregs away from EAX.
+  // When a function has the defer_ret_eax_alloc attribute, the pre-regalloc
+  // analysis pass records vregs that are copied to $eax before RET. For those
+  // vregs, provide EDX and ECX as hard hints so the register allocator puts the
+  // return value computation in a non-EAX register. This produces "test ah"
+  // (from the fnstsw result) instead of "test dh".
+  if (MF.getFunction().hasFnAttribute("defer_ret_eax_alloc") &&
+      TRI.isGeneralPurposeRegisterClass(&RC) &&
+      VirtReg.isVirtual()) {
+    const auto *MFI = MF.getInfo<X86MachineFunctionInfo>();
+    if (MFI->isDeferredRetVReg(VirtReg)) {
+      Hints.clear();
+      if (is_contained(Order, X86::EDX) && !MRI->isReserved(X86::EDX))
+        Hints.push_back(X86::EDX);
+      if (is_contained(Order, X86::ECX) && !MRI->isReserved(X86::ECX))
+        Hints.push_back(X86::ECX);
+      return true; // HardHints: allocator will only consider hinted registers
+    }
+  }
+
   // bw1-decomp: MSVC 6.0 register allocation preferences.
   // When msvc6_regalloc is set, hint the this-pointer virtual register
   // (copied from ECX at function entry) to prefer ESI. Other callee-saved

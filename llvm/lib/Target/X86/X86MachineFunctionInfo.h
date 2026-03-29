@@ -170,6 +170,11 @@ class X86MachineFunctionInfo : public MachineFunctionInfo {
   SmallVector<size_t, 0> PreallocatedStackSizes;
   SmallVector<SmallVector<size_t, 4>, 0> PreallocatedArgOffsets;
 
+  /// DeferredRetVRegs - Virtual registers that are copied to $eax immediately
+  /// before RET. The pre-regalloc analysis pass X86DeferRetEaxAlloc populates
+  /// this so getRegAllocationHints can steer them away from EAX.
+  SmallVector<Register, 4> DeferredRetVRegs;
+
   // True if a function clobbers FP/BP according to its calling convention.
   bool FPClobberedByCall = false;
   bool BPClobberedByCall = false;
@@ -346,6 +351,14 @@ public:
 
   bool getBPClobberedByInvoke() const { return BPClobberedByInvoke; }
   void setBPClobberedByInvoke(bool C) { BPClobberedByInvoke = C; }
+
+  bool isDeferredRetVReg(Register R) const {
+    return is_contained(DeferredRetVRegs, R);
+  }
+  void addDeferredRetVReg(Register R) {
+    if (!is_contained(DeferredRetVRegs, R))
+      DeferredRetVRegs.push_back(R);
+  }
 };
 
 } // End llvm namespace

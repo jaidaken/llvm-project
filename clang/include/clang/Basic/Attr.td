@@ -5550,6 +5550,13 @@ def DeferZeroEax: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def DeferRetEaxAlloc: InheritableAttr {
+  let Spellings = [GNU<"defer_ret_eax_alloc">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def SwapEaxZero: InheritableAttr {
   let Spellings = [GNU<"swap_eax_zero">];
   let Subjects = SubjectList<[Function]>;

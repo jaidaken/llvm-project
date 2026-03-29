@@ -265,6 +265,10 @@ FunctionPass *createX86PreferMovAndCmpPass();
 FunctionPass *createX86MergeReturnZeroPass();
 FunctionPass *createX86PreferRtlPushOrderPass();
 
+/// Return a pre-regalloc analysis pass that records virtual registers copied
+/// to EAX before RET, so getRegAllocationHints can steer them away from EAX.
+FunctionPass *createX86DeferRetEaxAllocPass();
+
 /// Return a Machine IR pass that decomposes IMUL with specific constants
 /// into LEA/SHL/SUB chains matching MSVC 6.0 strength reduction output.
 FunctionPass *createX86DecomposeImulPass();
