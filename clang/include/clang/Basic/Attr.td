@@ -5172,6 +5172,13 @@ def ForceThisEsiLazy: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def ForceParamBeforeThis: InheritableAttr {
+  let Spellings = [GNU<"force_param_before_this">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
 def ForcedCalleeSaves: InheritableAttr {
   let Spellings = [GNU<"forced_callee_saves">];
   let Args = [StringArgument<"Registers">];

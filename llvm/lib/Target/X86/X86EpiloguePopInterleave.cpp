@@ -20,8 +20,9 @@
 //   pop esi
 //   ret
 //
-// This pass moves the MOV32ri EAX, imm from before the first POP to after
-// the Nth POP (specified by the attribute parameter).
+// This pass moves the MOV32ri EAX,imm (or XOR32rr EAX,EAX for zeroing)
+// from before the first POP to after the Nth POP (specified by the attribute
+// parameter).
 //
 // Gated on the "epilogue_pop_interleave" function attribute with a parameter
 // specifying after which POP to insert (e.g., "1" = after first POP).
@@ -44,10 +45,19 @@ static bool isPop32r(const MachineInstr &MI) {
   return MI.getOpcode() == X86::POP32r;
 }
 
-/// Returns true if MI is MOV32ri with EAX destination.
-static bool isMovEaxImm(const MachineInstr &MI) {
-  return MI.getOpcode() == X86::MOV32ri &&
-         MI.getOperand(0).getReg() == X86::EAX;
+/// Returns true if MI is MOV32ri EAX or XOR32rr/XOR32rr_REV EAX,EAX
+/// (self-zeroing, equivalent to mov eax, 0).
+static bool isMovOrXorEax(const MachineInstr &MI) {
+  if (MI.getOpcode() == X86::MOV32ri &&
+      MI.getOperand(0).getReg() == X86::EAX)
+    return true;
+  if ((MI.getOpcode() == X86::XOR32rr ||
+       MI.getOpcode() == X86::XOR32rr_REV) &&
+      MI.getOperand(0).getReg() == X86::EAX &&
+      MI.getOperand(1).getReg() == X86::EAX &&
+      MI.getOperand(2).getReg() == X86::EAX)
+    return true;
+  return false;
 }
 
 class X86EpiloguePopInterleavePass : public MachineFunctionPass {
@@ -85,13 +95,13 @@ bool X86EpiloguePopInterleavePass::runOnMachineFunction(MachineFunction &MF) {
   bool Changed = false;
 
   for (MachineBasicBlock &MBB : MF) {
-    // Look for a MOV32ri EAX, imm followed by one or more POPs.
+    // Look for a MOV32ri EAX,imm or XOR32rr EAX,EAX followed by POPs.
     // Walk the block looking for a return instruction, then scan backward.
     for (auto I = MBB.begin(), E = MBB.end(); I != E; ) {
       MachineInstr &MI = *I;
 
-      // Find MOV32ri EAX, imm.
-      if (!isMovEaxImm(MI)) {
+      // Find MOV32ri EAX,imm or XOR32rr EAX,EAX.
+      if (!isMovOrXorEax(MI)) {
         ++I;
         continue;
       }

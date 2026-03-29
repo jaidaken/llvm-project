@@ -2449,6 +2449,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("force_this_edi");
     if (TargetDecl->hasAttr<ForceThisEsiLazyAttr>())
       FuncAttrs.addAttribute("force_this_esi_lazy");
+    if (TargetDecl->hasAttr<ForceParamBeforeThisAttr>())
+      FuncAttrs.addAttribute("force_param_before_this");
     if (TargetDecl->hasAttr<PreferFmulMemAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::PreferFmulMem);
     if (TargetDecl->hasAttr<PreferPopCleanupAttr>())

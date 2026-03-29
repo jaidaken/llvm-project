@@ -39,15 +39,15 @@
 //   movzx eax, al ; extend
 //   ret
 //
-// MSVC 6.0 generates:
+// MSVC 6.0 generates (AND = all must hold, jump to false on failure):
 //   [CMP/TEST]          ; flag setter 1
-//   jcc1 .return_1      ; if true, return 1
+//   jncc1 .return_0     ; if cond1 FAILS, return 0
 //   [CMP/TEST]          ; flag setter 2
-//   jcc2 .return_1      ; if true, return 1
-//   xor eax, eax        ; both false: return 0
+//   jncc2 .return_0     ; if cond2 FAILS, return 0
+//   mov eax, 1          ; both true: return 1 (fall-through)
 //   ret
-//   .return_1:
-//   mov eax, 1
+//   .return_0:
+//   xor eax, eax
 //   ret
 //
 // Pattern 3: Multi-comparison OR pattern.
@@ -154,16 +154,16 @@ skipNonReal(MachineBasicBlock::iterator It, MachineBasicBlock::iterator E) {
 ///   [POP32r ...]       ; optional callee-save restores
 ///   RET
 ///
-/// Replaced with:
-///   [CMP/TEST 1]       ; flag setter 1 stays
-///   JCC_1 TrueMBB, CC1 ; jump to true if condition 1 holds
-///   [CMP/TEST 2]       ; flag setter 2 stays
-///   JCC_1 TrueMBB, CC2 ; jump to true if condition 2 holds
-///   XOR32rr EAX, EAX   ; false path: return 0
+/// Replaced with (AND = all must hold, jump to false on failure):
+///   [CMP/TEST 1]              ; flag setter 1 stays
+///   JCC_1 FalseMBB, inv(CC1)  ; jump to false if condition 1 fails
+///   [CMP/TEST 2]              ; flag setter 2 stays
+///   JCC_1 FalseMBB, inv(CC2)  ; jump to false if condition 2 fails
+///   MOV32ri EAX, 1            ; true path (fall-through): return 1
 ///   [POPs]
 ///   RET
-///   TrueMBB:
-///   MOV32ri EAX, 1     ; true path: return 1
+///   FalseMBB:
+///   XOR32rr EAX, EAX          ; false path: return 0
 ///   [POPs]
 ///   RET
 static bool tryTransformMultiSetccAnd(MachineBasicBlock &MBB,
@@ -265,76 +265,84 @@ static bool tryTransformMultiSetccAnd(MachineBasicBlock &MBB,
   }
 
   // Step 6: Build the replacement.
-  //   [CMP/TEST 1]         ; stays in place
-  //   JCC_1 TrueMBB, CC1
-  //   [CMP/TEST 2]         ; stays in place
-  //   JCC_1 TrueMBB, CC2
-  //   XOR32rr EAX, EAX     ; false path
+  // AND semantics: ALL conditions must hold for true. Each JCC jumps to the
+  // FALSE block when its condition FAILS (inverted CC). Fall-through = TRUE.
+  //
+  //   [CMP/TEST 1]                    ; stays in place
+  //   JCC_1 FalseMBB, inverted(CC1)   ; if cond1 fails, return 0
+  //   [CMP/TEST 2]                    ; stays in place
+  //   JCC_1 FalseMBB, inverted(CC2)   ; if cond2 fails, return 0
+  //   MOV32ri EAX, 1                  ; true path (fall-through)
   //   [POPs]
   //   RET
-  //   TrueMBB:
-  //   MOV32ri EAX, 1       ; true path
+  //   FalseMBB:
+  //   XOR32rr EAX, EAX               ; false path
   //   [POPs]
   //   RET
 
   DebugLoc DL = Set1I->getDebugLoc();
 
-  // Create the "true" block (return 1) after the current block.
-  MachineBasicBlock *TrueMBB = MF.CreateMachineBasicBlock();
-  TrueMBB->setLabelMustBeEmitted();
-  MF.insert(std::next(MachineFunction::iterator(&MBB)), TrueMBB);
+  // Invert condition codes: jump to false when condition does NOT hold.
+  X86::CondCode InvCC1 = X86::GetOppositeBranchCondition(CC1);
+  X86::CondCode InvCC2 = X86::GetOppositeBranchCondition(CC2);
+  if (InvCC1 == X86::COND_INVALID || InvCC2 == X86::COND_INVALID)
+    return false;
 
-  // Replace first SETCCr with JCC to TrueMBB using its condition.
+  // Create the "false" block (return 0) after the current block.
+  MachineBasicBlock *FalseMBB = MF.CreateMachineBasicBlock();
+  FalseMBB->setLabelMustBeEmitted();
+  MF.insert(std::next(MachineFunction::iterator(&MBB)), FalseMBB);
+
+  // Replace first SETCCr with JCC to FalseMBB using inverted condition.
   BuildMI(MBB, *Set1I, DL, TII->get(X86::JCC_1))
-      .addMBB(TrueMBB)
-      .addImm(CC1);
+      .addMBB(FalseMBB)
+      .addImm(InvCC1);
 
-  // Replace second SETCCr with JCC to TrueMBB using its condition.
+  // Replace second SETCCr with JCC to FalseMBB using inverted condition.
   // The flag-setter for the second SETCCr (if present) stays in place
   // between the first JCC and the second JCC.
   BuildMI(MBB, *Set2I, DL, TII->get(X86::JCC_1))
-      .addMBB(TrueMBB)
-      .addImm(CC2);
+      .addMBB(FalseMBB)
+      .addImm(InvCC2);
 
-  // False path: XOR reg, reg (return 0) in the current block.
+  // True path (fall-through): MOV reg, 1 in the current block.
   // Insert before the AND instruction position (which we are about to erase).
-  // Use the insertion point just after the second JCC we added.
   MachineInstr *InsertBefore = &*AndI;
-  BuildMI(MBB, *InsertBefore, DL, TII->get(X86::XOR32rr), RetReg32)
-      .addReg(RetReg32, RegState::Undef)
-      .addReg(RetReg32, RegState::Undef);
+  BuildMI(MBB, *InsertBefore, DL, TII->get(X86::MOV32ri), RetReg32)
+      .addImm(1);
 
-  // Clone the POPs for the false path.
+  // Clone the POPs for the true path.
   for (MachineInstr *PopMI : Pops) {
     MachineInstr *Clone = MF.CloneMachineInstr(PopMI);
     MBB.insert(InsertBefore, Clone);
   }
 
-  // Clone the RET for the false path.
+  // Clone the RET for the true path.
   {
-    MachineInstr *FalseRet = MF.CloneMachineInstr(&*RetI);
-    MBB.insert(InsertBefore, FalseRet);
+    MachineInstr *TrueRet = MF.CloneMachineInstr(&*RetI);
+    MBB.insert(InsertBefore, TrueRet);
   }
 
-  // Build the true block: MOV reg, 1; [POPs]; RET.
-  BuildMI(*TrueMBB, TrueMBB->end(), DL, TII->get(X86::MOV32ri), RetReg32)
-      .addImm(1);
+  // Build the false block: XOR reg, reg (return 0); [POPs]; RET.
+  BuildMI(*FalseMBB, FalseMBB->end(), DL, TII->get(X86::XOR32rr), RetReg32)
+      .addReg(RetReg32, RegState::Undef)
+      .addReg(RetReg32, RegState::Undef);
 
   for (MachineInstr *PopMI : Pops) {
     MachineInstr *Clone = MF.CloneMachineInstr(PopMI);
-    TrueMBB->insert(TrueMBB->end(), Clone);
+    FalseMBB->insert(FalseMBB->end(), Clone);
   }
 
-  // Transfer successors from MBB to TrueMBB and wire up.
-  TrueMBB->transferSuccessorsAndUpdatePHIs(&MBB);
-  MBB.addSuccessor(TrueMBB);
+  // Transfer successors from MBB to FalseMBB and wire up.
+  FalseMBB->transferSuccessorsAndUpdatePHIs(&MBB);
+  MBB.addSuccessor(FalseMBB);
 
-  // Move or clone the RET into the true block.
+  // Move or clone the RET into the false block.
   if (RetInSameBlock) {
-    TrueMBB->splice(TrueMBB->end(), &MBB, RetI, MBB.end());
+    FalseMBB->splice(FalseMBB->end(), &MBB, RetI, MBB.end());
   } else {
     MachineInstr *ClonedRet = MF.CloneMachineInstr(&*RetI);
-    TrueMBB->insert(TrueMBB->end(), ClonedRet);
+    FalseMBB->insert(FalseMBB->end(), ClonedRet);
   }
 
   // Erase the old instructions: SETCCr x2, AND8rr, MOVZX, POPs.

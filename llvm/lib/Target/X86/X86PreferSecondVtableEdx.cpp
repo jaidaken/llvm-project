@@ -110,10 +110,18 @@ bool X86PreferSecondVtableEdxPass::runOnMachineFunction(MachineFunction &MF) {
         continue;
       }
 
-      // Count MOV32rm ?, [ESI] instructions (any destination).
+      // Count MOV32rm ?, [ESI+0] instructions (vtable loads only).
+      // A vtable load has base=ESI and displacement=0.  Field loads like
+      // mov eax, [esi+0x28] have a non-zero displacement and must not
+      // be counted.
+      //
+      // MOV32rm operand layout: dst(0), base(1), scale(2), index(3),
+      //                         disp(4), segment(5)
       if (MI.getOpcode() == X86::MOV32rm &&
           MI.getOperand(1).isReg() &&
-          MI.getOperand(1).getReg() == X86::ESI) {
+          MI.getOperand(1).getReg() == X86::ESI &&
+          MI.getOperand(4).isImm() &&
+          MI.getOperand(4).getImm() == 0) {
         ++EsiLoadCount;
 
         // We want the 2nd ESI load, and it must come after a CALL.
@@ -155,7 +163,11 @@ bool X86PreferSecondVtableEdxPass::runOnMachineFunction(MachineFunction &MF) {
               }
 
               ++RewriteIt;
-              if (RedefinesEdx) {
+
+              // Stop after a CALL instruction: the call clobbers both EAX
+              // and EDX via regmask.  After the call, EAX holds the return
+              // value (unrelated to the vtable), so we must not rewrite it.
+              if (NMI.isCall() || RedefinesEdx) {
                 Done = true;
                 break;
               }

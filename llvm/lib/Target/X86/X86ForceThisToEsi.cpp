@@ -177,6 +177,30 @@ bool X86ForceThisToEsiPass::runOnMachineFunction(MachineFunction &MF) {
       BuildMI(EntryMBB, InsertPt, DL, TII->get(X86::MOV32rr), Target32)
           .addReg(X86::ECX);
 
+  // force_param_before_this: Find the first MOV32rm with ESP-relative
+  // addressing (stack parameter load) after the inserted MOV, skipping past
+  // any MOV32rr instructions (which will become nops after ECX->ESI rewrite).
+  // Move it before the inserted MOV ESI, ECX (MSVC 6.0 loads params first).
+  if (Fn.hasFnAttribute("force_param_before_this")) {
+    auto MovIt = MachineBasicBlock::iterator(InsertedMov);
+    auto ScanIt = std::next(MovIt);
+    // Skip past MOV32rr / MOV32rr_REV instructions (these are the compiler's
+    // own this-save that will become nop MOVs after rewriting).
+    while (ScanIt != EntryMBB.end() &&
+           (ScanIt->getOpcode() == X86::MOV32rr ||
+            ScanIt->getOpcode() == X86::MOV32rr_REV ||
+            ScanIt->isDebugInstr() || ScanIt->isPseudo()))
+      ++ScanIt;
+    if (ScanIt != EntryMBB.end() &&
+        ScanIt->getOpcode() == X86::MOV32rm &&
+        ScanIt->getNumOperands() >= 6 &&
+        ScanIt->getOperand(1).isReg() &&
+        ScanIt->getOperand(1).getReg() == X86::ESP) {
+      // Move the param load before the inserted MOV ESI, ECX.
+      EntryMBB.splice(MovIt, &EntryMBB, ScanIt);
+    }
+  }
+
   // Rewrite USE operands of ECX/CX/CL to Target, but only while ECX still
   // holds the original `this` value. Track ECX redefinitions: if ECX is
   // defined from a non-ESI/EDI source (e.g., `MOV32rm ECX, [mem]` for a
