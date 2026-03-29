@@ -2596,6 +2596,18 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("insert_dead_add_zero", IDAZ->getRegName());
     if (const auto *SCS = TargetDecl->getAttr<SplitCalleeSavesAttr>())
       FuncAttrs.addAttribute("split_callee_saves", SCS->getSpec());
+    if (TargetDecl->hasAttr<PreferSecondVtableEdxAttr>())
+      FuncAttrs.addAttribute("prefer_second_vtable_edx");
+    if (const auto *EPI = TargetDecl->getAttr<EpiloguePopInterleaveAttr>())
+      FuncAttrs.addAttribute("epilogue_pop_interleave", EPI->getCount());
+    if (TargetDecl->hasAttr<PreferFirstMemLoadOrderAttr>())
+      FuncAttrs.addAttribute("prefer_first_mem_load_order");
+    if (TargetDecl->hasAttr<PreferStackCmpLhsAttr>())
+      FuncAttrs.addAttribute("prefer_stack_cmp_lhs");
+    if (TargetDecl->hasAttr<MergeReturnBlocksAttr>())
+      FuncAttrs.addAttribute("merge_return_blocks");
+    if (TargetDecl->hasAttr<PreferMovPushAttr>())
+      FuncAttrs.addAttribute("prefer_mov_push");
 
     if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
       AddAttributesFromFunctionProtoType(

@@ -2991,6 +2991,13 @@ static void handlePreferByteParamLoadAttr(Sema &S, Decl *D, const ParsedAttr &AL
   D->addAttr(::new (S.Context) PreferByteParamLoadAttr(S.Context, AL, Str));
 }
 
+static void handleEpiloguePopInterleaveAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  StringRef Str;
+  if (!S.checkStringLiteralArgumentAttr(AL, 0, Str))
+    return;
+  D->addAttr(::new (S.Context) EpiloguePopInterleaveAttr(S.Context, AL, Str));
+}
+
 static void handleSplitCalleeSavesAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   StringRef Str;
   if (!S.checkStringLiteralArgumentAttr(AL, 0, Str))
@@ -7064,6 +7071,9 @@ ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D, const ParsedAttr &AL,
     break;
   case ParsedAttr::AT_PreferByteParamLoad:
     handlePreferByteParamLoadAttr(S, D, AL);
+    break;
+  case ParsedAttr::AT_EpiloguePopInterleave:
+    handleEpiloguePopInterleaveAttr(S, D, AL);
     break;
   case ParsedAttr::AT_SplitCalleeSaves:
     handleSplitCalleeSavesAttr(S, D, AL);

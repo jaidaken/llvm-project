@@ -5640,3 +5640,45 @@ def PreferNthLoadReg: InheritableAttr {
   let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
 }
+
+def PreferSecondVtableEdx: InheritableAttr {
+  let Spellings = [GNU<"prefer_second_vtable_edx">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def EpiloguePopInterleave: InheritableAttr {
+  let Spellings = [GNU<"epilogue_pop_interleave">];
+  let Args = [StringArgument<"Count">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+}
+
+def PreferFirstMemLoadOrder: InheritableAttr {
+  let Spellings = [GNU<"prefer_first_mem_load_order">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferStackCmpLhs: InheritableAttr {
+  let Spellings = [GNU<"prefer_stack_cmp_lhs">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def MergeReturnBlocks: InheritableAttr {
+  let Spellings = [GNU<"merge_return_blocks">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
+
+def PreferMovPush: InheritableAttr {
+  let Spellings = [GNU<"prefer_mov_push">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
+}
