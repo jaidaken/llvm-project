@@ -2471,6 +2471,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute("call_tail");
     if (TargetDecl->hasAttr<PreferSequentialParamLoadAttr>())
       FuncAttrs.addAttribute("prefer_sequential_param_load");
+    if (const auto *PLO = TargetDecl->getAttr<PreferParamLoadOrderAttr>())
+      FuncAttrs.addAttribute("prefer_param_load_order", PLO->getOrder());
     if (TargetDecl->hasAttr<Msvc6ScheduleAttr>())
       FuncAttrs.addAttribute("msvc6_schedule");
     if (const auto *ISC = TargetDecl->getAttr<InterleaveStoreWithCallAttr>())

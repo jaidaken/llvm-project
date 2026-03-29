@@ -5410,6 +5410,13 @@ def PreferSequentialParamLoad: InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def PreferParamLoadOrder: InheritableAttr {
+  let Spellings = [GNU<"prefer_param_load_order">];
+  let Args = [StringArgument<"Order">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
+}
+
 def Msvc6Schedule: InheritableAttr {
   let Spellings = [GNU<"msvc6_schedule">];
   let Subjects = SubjectList<[Function]>;

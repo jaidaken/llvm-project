@@ -2947,6 +2947,13 @@ static void handleStoreOrderAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   D->addAttr(::new (S.Context) StoreOrderAttr(S.Context, AL, Str));
 }
 
+static void handlePreferParamLoadOrderAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  StringRef Str;
+  if (!S.checkStringLiteralArgumentAttr(AL, 0, Str))
+    return;
+  D->addAttr(::new (S.Context) PreferParamLoadOrderAttr(S.Context, AL, Str));
+}
+
 static void handleInterleaveStoreWithCallAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   StringRef Str;
   if (!S.checkStringLiteralArgumentAttr(AL, 0, Str))
@@ -7053,6 +7060,9 @@ ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D, const ParsedAttr &AL,
     break;
   case ParsedAttr::AT_StoreOrder:
     handleStoreOrderAttr(S, D, AL);
+    break;
+  case ParsedAttr::AT_PreferParamLoadOrder:
+    handlePreferParamLoadOrderAttr(S, D, AL);
     break;
   case ParsedAttr::AT_InterleaveStoreWithCall:
     handleInterleaveStoreWithCallAttr(S, D, AL);

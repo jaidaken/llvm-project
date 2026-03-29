@@ -672,6 +672,7 @@ void X86PassConfig::addPreEmitPass() {
   addPass(createX86HoistPushLoadsPass());     // after RegisterPush, before BatchPush
   addPass(createX86PreferBatchPushPass());
   addPass(createX86PreferSequentialParamLoadPass()); // after BatchPush, reorders ESP loads ascending
+  addPass(createX86PreferParamLoadOrderPass());     // after SequentialParamLoad, for non-CALL patterns
   addPass(createX86BatchLoadBeforeStorePass()); // after force_this_eax has run
   addPass(createX86Msvc6EvalOrderPass());       // swap param loads for RHS-first eval
   addPass(createX86PreferRtlPushOrderPass());  // move push-imm before sub-call chains (RTL eval)

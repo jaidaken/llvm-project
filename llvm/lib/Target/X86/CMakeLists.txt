@@ -85,6 +85,7 @@ set(sources
   X86InterleavePushBeforeBranch.cpp
   X86PreferBatchPush.cpp
   X86PreferSequentialParamLoad.cpp
+  X86PreferParamLoadOrder.cpp
   X86HoistPushLoads.cpp
   X86BatchLoadBeforeStore.cpp
   X86Msvc6EvalOrder.cpp

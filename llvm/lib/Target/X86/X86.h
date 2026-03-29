@@ -253,6 +253,7 @@ FunctionPass *createX86InterleaveEcxRestorePass();
 FunctionPass *createX86InterleavePushBeforeBranchPass();
 FunctionPass *createX86PreferBatchPushPass();
 FunctionPass *createX86PreferSequentialParamLoadPass();
+FunctionPass *createX86PreferParamLoadOrderPass();
 FunctionPass *createX86HoistPushLoadsPass();
 FunctionPass *createX86BatchLoadBeforeStorePass();
 FunctionPass *createX86Msvc6EvalOrderPass();

@@ -208,10 +208,14 @@ void X86AsmPrinter::emitMsvc6Sdtor() {
 
   // Compute the short jump distance for je.  Each instruction contributes
   // a known number of bytes:
-  //   push imm32 = 5, push esi = 1, call rel32 = 5, add esp,N = 3
+  //   push imm8 = 2, push imm32 = 5, push esi = 1, call rel32 = 5, add esp,N = 3
+  // MSVC 6.0 uses PUSH imm8 (opcode 6A, 2 bytes) when the size fits in a
+  // signed byte (0-127), and PUSH imm32 (opcode 68, 5 bytes) otherwise.
+  bool PushIsImm8 = Is2Arg && DeleteSize < 128;
+  unsigned PushSize = PushIsImm8 ? 2 : 5;
   unsigned JeTarget = 1 + 5 + 3; // push esi + call delete + add esp,4
   if (Is2Arg)
-    JeTarget = 5 + 1 + 5 + 3; // push size + push esi + call delete + add esp,8
+    JeTarget = PushSize + 1 + 5 + 3; // push size + push esi + call delete + add esp,8
 
   // Create skip label.
   MCSymbol *SkipSym = Ctx.createTempSymbol("sdtor_skip");
@@ -265,10 +269,11 @@ void X86AsmPrinter::emitMsvc6Sdtor() {
           .addImm(X86::COND_E),
       STI);
 
-  // Optional: push <size>  (68 <imm32>)
+  // Optional: push <size>  (6A <imm8> or 68 <imm32>)
   if (Is2Arg) {
+    unsigned PushOpc = PushIsImm8 ? X86::PUSH32i8 : X86::PUSH32i;
     OutStreamer->emitInstruction(
-        MCInstBuilder(X86::PUSH32i).addImm(DeleteSize), STI);
+        MCInstBuilder(PushOpc).addImm(DeleteSize), STI);
   }
 
   // push esi  (56)

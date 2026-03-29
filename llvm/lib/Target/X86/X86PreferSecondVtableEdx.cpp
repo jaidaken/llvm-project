@@ -93,12 +93,13 @@ bool X86PreferSecondVtableEdxPass::runOnMachineFunction(MachineFunction &MF) {
 
   bool Changed = false;
 
-  for (MachineBasicBlock &MBB : MF) {
-    // Walk the block looking for: ESI load (vtable) ... CALL ... ESI load (EAX)
-    // The second ESI load into EAX after a CALL is the reload to rewrite.
-    unsigned EsiLoadCount = 0;
-    bool SeenCall = false;
+  // Scan ALL blocks in layout order, counting vtable loads (MOV32rm reg, [ESI])
+  // globally.  After prevent_setcc_merge splits the function, the two vtable
+  // loads may end up in different basic blocks.
+  unsigned EsiLoadCount = 0;
+  bool SeenCall = false;
 
+  for (MachineBasicBlock &MBB : MF) {
     for (auto I = MBB.begin(), E = MBB.end(); I != E; ++I) {
       MachineInstr &MI = *I;
       if (MI.isPseudo() || MI.isDebugInstr())
@@ -122,38 +123,58 @@ bool X86PreferSecondVtableEdxPass::runOnMachineFunction(MachineFunction &MF) {
           MI.getOperand(0).setReg(X86::EDX);
 
           // Rewrite all uses of EAX -> EDX until EDX is redefined.
-          auto Next = std::next(I);
-          while (Next != E) {
-            MachineInstr &NMI = *Next;
-            if (NMI.isPseudo() || NMI.isDebugInstr()) {
-              ++Next;
-              continue;
-            }
+          // This may span into subsequent blocks.
+          auto RewriteIt = std::next(I);
+          auto *RewriteMBB = &MBB;
+          bool Done = false;
 
-            // Check if this instruction redefines EDX (before we rewrite).
-            // If it does, stop rewriting after processing this instruction.
-            bool RedefinesEdx = false;
-            for (const MachineOperand &MO : NMI.operands()) {
-              if (MO.isReg() && MO.isDef() && isEdxSubreg(MO.getReg()))
-                RedefinesEdx = true;
-            }
-
-            // Rewrite EAX uses to EDX in this instruction.
-            for (MachineOperand &MO : NMI.operands()) {
-              if (!MO.isReg())
+          while (!Done) {
+            auto RewriteEnd = RewriteMBB->end();
+            while (RewriteIt != RewriteEnd) {
+              MachineInstr &NMI = *RewriteIt;
+              if (NMI.isPseudo() || NMI.isDebugInstr()) {
+                ++RewriteIt;
                 continue;
-              unsigned NewReg = mapEaxToEdx(MO.getReg());
-              if (NewReg)
-                MO.setReg(NewReg);
-            }
+              }
 
-            ++Next;
-            if (RedefinesEdx)
-              break;
+              // Check if this instruction redefines EDX (before we rewrite).
+              // If it does, stop rewriting after processing this instruction.
+              bool RedefinesEdx = false;
+              for (const MachineOperand &MO : NMI.operands()) {
+                if (MO.isReg() && MO.isDef() && isEdxSubreg(MO.getReg()))
+                  RedefinesEdx = true;
+              }
+
+              // Rewrite EAX uses to EDX in this instruction.
+              for (MachineOperand &MO : NMI.operands()) {
+                if (!MO.isReg())
+                  continue;
+                unsigned NewReg = mapEaxToEdx(MO.getReg());
+                if (NewReg)
+                  MO.setReg(NewReg);
+              }
+
+              ++RewriteIt;
+              if (RedefinesEdx) {
+                Done = true;
+                break;
+              }
+            }
+            if (!Done) {
+              // Move to the next block in layout order.
+              auto NextMBB = std::next(MachineFunction::iterator(RewriteMBB));
+              if (NextMBB == MF.end()) {
+                Done = true;
+              } else {
+                RewriteMBB = &*NextMBB;
+                RewriteIt = RewriteMBB->begin();
+              }
+            }
           }
 
           Changed = true;
-          break; // One rewrite per basic block.
+          // Found and processed the 2nd vtable load; we are done.
+          return Changed;
         }
       }
     }
