@@ -77,6 +77,25 @@ bool X86DeferRetEaxAllocPass::runOnMachineFunction(MachineFunction &MF) {
     }
   }
 
+  // Scan all blocks in layout order for the first MOV32rm with a virtual
+  // register destination. Record it for pro-hinting toward EAX.
+  for (auto &MBB : MF) {
+    for (auto &MI : MBB) {
+      if (MI.getOpcode() != X86::MOV32rm)
+        continue;
+      const MachineOperand &Dst = MI.getOperand(0);
+      if (!Dst.isReg() || !Dst.getReg().isVirtual())
+        continue;
+      Register VReg = Dst.getReg();
+      LLVM_DEBUG(dbgs() << "DeferRetEaxAlloc: first load vreg "
+                        << printReg(VReg) << " in "
+                        << MF.getName() << "\n");
+      MFI->setFirstLoadVReg(VReg);
+      goto done_first_load;
+    }
+  }
+done_first_load:
+
   return false; // Pure analysis, no IR modifications.
 }
 

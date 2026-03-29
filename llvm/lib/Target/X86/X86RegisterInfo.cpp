@@ -1297,6 +1297,14 @@ bool X86RegisterInfo::getRegAllocationHints(Register VirtReg,
         Hints.push_back(X86::ECX);
       return true; // HardHints: allocator will only consider hinted registers
     }
+    // Pro-hint: steer the first memory load's vreg toward EAX.
+    Register FirstLoad = MFI->getFirstLoadVReg();
+    if (FirstLoad.isValid() && VirtReg == FirstLoad) {
+      Hints.clear();
+      if (is_contained(Order, X86::EAX) && !MRI->isReserved(X86::EAX))
+        Hints.push_back(X86::EAX);
+      return true; // HardHints: allocator must use EAX
+    }
   }
 
   // bw1-decomp: MSVC 6.0 register allocation preferences.

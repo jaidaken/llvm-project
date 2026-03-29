@@ -175,6 +175,11 @@ class X86MachineFunctionInfo : public MachineFunctionInfo {
   /// this so getRegAllocationHints can steer them away from EAX.
   SmallVector<Register, 4> DeferredRetVRegs;
 
+  /// FirstLoadVReg - The virtual register destination of the first MOV32rm
+  /// in layout order. X86DeferRetEaxAlloc records this so
+  /// getRegAllocationHints can pro-hint it toward EAX.
+  Register FirstLoadVReg;
+
   // True if a function clobbers FP/BP according to its calling convention.
   bool FPClobberedByCall = false;
   bool BPClobberedByCall = false;
@@ -359,6 +364,9 @@ public:
     if (!is_contained(DeferredRetVRegs, R))
       DeferredRetVRegs.push_back(R);
   }
+
+  Register getFirstLoadVReg() const { return FirstLoadVReg; }
+  void setFirstLoadVReg(Register R) { FirstLoadVReg = R; }
 };
 
 } // End llvm namespace
